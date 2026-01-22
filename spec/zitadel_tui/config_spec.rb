@@ -63,4 +63,41 @@ RSpec.describe ZitadelTui::Config do
       end
     end
   end
+
+  describe '#predefined_users' do
+    it 'returns empty array when no config file is set' do
+      expect(config.predefined_users).to eq([])
+    end
+
+    it 'returns empty array when config file does not exist' do
+      config.apps_config_file = '/nonexistent/apps.yml'
+      expect(config.predefined_users).to eq([])
+    end
+
+    it 'parses users from YAML file' do
+      Tempfile.create(['apps', '.yml']) do |f|
+        f.write(<<~YAML)
+          users:
+            - email: admin@example.com
+              first_name: Admin
+              last_name: User
+              admin: true
+            - email: user@example.com
+              first_name: Regular
+              last_name: User
+        YAML
+        f.flush
+
+        config.apps_config_file = f.path
+        users = config.predefined_users
+
+        expect(users.length).to eq(2)
+        expect(users[0][:email]).to eq('admin@example.com')
+        expect(users[0][:first_name]).to eq('Admin')
+        expect(users[0][:admin]).to be true
+        expect(users[1][:email]).to eq('user@example.com')
+        expect(users[1][:admin]).to be false
+      end
+    end
+  end
 end

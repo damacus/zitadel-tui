@@ -72,6 +72,22 @@ module ZitadelTui
       end
     end
 
+    def predefined_users
+      return [] unless apps_config_file && File.exist?(apps_config_file)
+
+      yaml = YAML.safe_load_file(apps_config_file, symbolize_names: true)
+      return [] unless yaml && yaml[:users]
+
+      yaml[:users].map do |user|
+        {
+          email: user[:email],
+          first_name: user[:first_name],
+          last_name: user[:last_name],
+          admin: user[:admin] || false
+        }
+      end
+    end
+
     def save
       @config.write(force: true)
     end

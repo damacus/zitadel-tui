@@ -1,6 +1,9 @@
-# Example apps configuration file for zitadel-tui
+# Example configuration file for zitadel-tui
 # Copy this file to apps.yml and customize for your environment
-#
+
+# =============================================================================
+# OIDC Applications
+# =============================================================================
 # Each app is defined with:
 #   - redirect_uris: Array of OAuth redirect URIs
 #   - public: Boolean - true for public clients (no secret), false for confidential
@@ -39,3 +42,23 @@ apps:
     redirect_uris:
       - https://gitea.example.com/user/oauth2/zitadel/callback
     public: false
+
+# =============================================================================
+# Predefined Users
+# =============================================================================
+# Each user is defined with:
+#   - email: User's email address (required)
+#   - first_name: User's first name (required)
+#   - last_name: User's last name (required)
+#   - admin: Boolean - true to grant IAM_OWNER role (optional, default: false)
+
+users:
+  - email: admin@example.com
+    first_name: Admin
+    last_name: User
+    admin: true
+
+  - email: user@example.com
+    first_name: Regular
+    last_name: User
+    admin: false

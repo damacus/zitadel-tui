@@ -171,13 +171,25 @@ module ZitadelTui
         @ui.error("Failed to grant role: #{e.message}")
       end
 
+      def predefined_users
+        @client.config.predefined_users
+      end
+
       def quick_setup
         @ui.subheader('Quick Setup - Predefined Users')
+
+        users = predefined_users
+        if users.empty?
+          @ui.warning('No predefined users configured.')
+          @ui.info('Add users to your config YAML file.')
+          @ui.info('See README.md for configuration format.')
+          return
+        end
 
         @ui.info('The following users will be created:')
         @ui.newline
 
-        rows = PREDEFINED_USERS.map do |user|
+        rows = users.map do |user|
           [user[:email], "#{user[:first_name]} #{user[:last_name]}", user[:admin] ? 'Yes' : 'No']
         end
         @ui.table(%w[Email Name Admin], rows)
@@ -185,7 +197,7 @@ module ZitadelTui
         @ui.newline
         return unless @ui.yes?('Create these users?')
 
-        PREDEFINED_USERS.each do |user_data|
+        users.each do |user_data|
           result = @ui.spinner("Creating #{user_data[:email]}...") do
             @client.create_human_user(
               email: user_data[:email],
