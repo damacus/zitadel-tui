@@ -1,0 +1,41 @@
+# Example apps configuration file for zitadel-tui
+# Copy this file to apps.yml and customize for your environment
+#
+# Each app is defined with:
+#   - redirect_uris: Array of OAuth redirect URIs
+#   - public: Boolean - true for public clients (no secret), false for confidential
+
+apps:
+  grafana:
+    redirect_uris:
+      - https://grafana.example.com/oauth2/callback
+      - https://grafana.example.com/login/generic_oauth
+    public: false
+
+  paperless:
+    redirect_uris:
+      - https://paperless.example.com/oauth2/callback
+      - https://paperless.example.com/accounts/oidc/zitadel/login/callback/
+    public: false
+
+  minio:
+    redirect_uris:
+      - https://minio.example.com/oauth_callback
+    public: false
+
+  mealie:
+    redirect_uris:
+      - https://mealie.example.com/login
+      - https://mealie.example.com/login?direct=1
+      - https://mealie.example.com/api/auth/oauth/callback
+    public: true
+
+  nextcloud:
+    redirect_uris:
+      - https://nextcloud.example.com/apps/oidc_login/oidc
+    public: false
+
+  gitea:
+    redirect_uris:
+      - https://gitea.example.com/user/oauth2/zitadel/callback
+    public: false
