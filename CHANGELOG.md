@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/damacus/zitadel-tui/compare/v1.0.0...v1.0.1) (2026-01-22)
+
+
+### Bug Fixes
+
+* correct Ruby version requirement in README ([#7](https://github.com/damacus/zitadel-tui/issues/7)) ([3166e22](https://github.com/damacus/zitadel-tui/commit/3166e22e7a7a270729094e291cb1190f1529bd93))
+
 ## 1.0.0 (2026-01-22)
 
 
