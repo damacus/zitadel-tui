@@ -25,7 +25,7 @@ provider configuration.
 
 ## Requirements
 
-- Ruby >= 3.2
+- Ruby >= 3.1
 - kubectl configured with cluster access (for fetching secrets)
 
 ## Installation
