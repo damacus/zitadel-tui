@@ -6,6 +6,7 @@ require 'uri'
 require 'openssl'
 require 'base64'
 require 'time'
+require 'tty-command'
 
 module ZitadelTui
   class Client
@@ -160,8 +161,9 @@ module ZitadelTui
 
     def kubectl_get_secret(name, namespace, key)
       escaped_key = key.gsub('.', '\\.')
-      cmd = "kubectl get secret #{name} -n #{namespace} -o jsonpath='{.data.#{escaped_key}}'"
-      result = `#{cmd}`.strip
+      cmd = TTY::Command.new(printer: :null)
+      result = cmd.run("kubectl get secret #{name} -n #{namespace} -o jsonpath='{.data.#{escaped_key}}'",
+                       only_output_on_error: true).out.strip
       raise ApiError, "Failed to get secret #{name}" if result.empty?
 
       result
