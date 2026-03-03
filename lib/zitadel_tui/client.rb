@@ -212,10 +212,21 @@ module ZitadelTui
       JSON.parse(response.body)['access_token']
     end
 
+    # ⚡ Bolt: Reuse the Net::HTTP connection to avoid repeated TCP/TLS handshakes
+    # This significantly reduces latency when making sequential API requests
+    # (e.g., during quick setup or listing operations)
+    def http_client
+      return @http_client if @http_client&.started?
+
+      uri = URI(config.zitadel_url)
+      @http_client = Net::HTTP.new(uri.host, uri.port)
+      @http_client.use_ssl = uri.scheme == 'https'
+      @http_client.start
+      @http_client
+    end
+
     def api_request(method, path, body = nil)
       uri = URI("#{config.zitadel_url}#{path}")
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = true
 
       request = build_request(method, uri)
       request['Authorization'] = "Bearer #{@token || @pat}"
@@ -223,7 +234,16 @@ module ZitadelTui
       request['Accept'] = 'application/json'
       request.body = body.to_json if body
 
-      response = http.request(request)
+      begin
+        response = http_client.request(request)
+      rescue EOFError, Errno::ECONNRESET, Errno::EPIPE, Net::ReadTimeout
+        # If the keep-alive connection was closed by the server while idle,
+        # restart the connection and retry once.
+        @http_client&.finish if @http_client&.started?
+        @http_client = nil
+        response = http_client.request(request)
+      end
+
       handle_response(response)
     end
 

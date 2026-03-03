@@ -1,0 +1,3 @@
+## 2024-05-15 - [Connection Pooling in Net::HTTP]
+**Learning:** `Net::HTTP` by default doesn't reuse connections across multiple requests unless using `#start` to keep the connection open. In `lib/zitadel_tui/client.rb`, every `api_request` instantiates a new `Net::HTTP.new` object, forcing a new TCP connection and TLS handshake for every API call. When running commands like `quick_setup` that make multiple sequential API calls (e.g. creating 10 users = 10 calls, or apps), the lack of connection reuse creates unnecessary latency.
+**Action:** Implement connection pooling/keep-alive by persisting the `Net::HTTP` instance across requests using `Net::HTTP.start` or keeping an open client connection inside the `Client` object to avoid repeated handshakes.
