@@ -1,0 +1,3 @@
+## 2024-05-28 - Ruby Net::HTTP Persistent Connections
+**Learning:** Ruby's `Net::HTTP.new` establishes a new TCP connection and performs a new TLS handshake for every single request unless the instance is memoized and reused. In CLI/TUI applications making many sequential API calls, this adds significant overhead per request.
+**Action:** When working with API clients using `Net::HTTP`, always memoize the connection instance. Handle keep-alive timeouts gracefully by rescuing `EOFError`, `Errno::ECONNRESET`, and `Errno::EPIPE`, but only retry idempotent requests (like `GET`) to avoid duplicating data.

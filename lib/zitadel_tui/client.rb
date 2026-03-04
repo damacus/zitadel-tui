@@ -212,10 +212,21 @@ module ZitadelTui
       JSON.parse(response.body)['access_token']
     end
 
+    # ⚡ Bolt Optimization: Memoize the Net::HTTP connection to use keep-alive.
+    # By reusing the same HTTP instance across multiple API calls, we avoid the
+    # expensive overhead of repeatedly establishing TCP connections and TLS handshakes.
+    # This significantly speeds up operations that make multiple requests (like listing apps).
+    def http_client
+      @http_client ||= begin
+        uri = URI(config.zitadel_url)
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == 'https'
+        http
+      end
+    end
+
     def api_request(method, path, body = nil)
       uri = URI("#{config.zitadel_url}#{path}")
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = true
 
       request = build_request(method, uri)
       request['Authorization'] = "Bearer #{@token || @pat}"
@@ -223,7 +234,20 @@ module ZitadelTui
       request['Accept'] = 'application/json'
       request.body = body.to_json if body
 
-      response = http.request(request)
+      http_client.start unless http_client.started?
+
+      begin
+        response = http_client.request(request)
+      rescue EOFError, Errno::ECONNRESET, Errno::EPIPE => e
+        # If the server closes the idle keep-alive connection, we catch the error.
+        # To avoid duplicating non-idempotent operations (like POST), we only retry GET requests.
+        raise e unless method == :get
+
+        http_client.finish if http_client.started?
+        http_client.start
+        response = http_client.request(request)
+      end
+
       handle_response(response)
     end
 
