@@ -137,6 +137,9 @@ module ZitadelTui
     def load_service_account_key
       key_file = config.sa_key_file
 
+      # SECURITY FIX: Prevent symlink attacks by checking if the file is a symlink
+      raise SecurityError, "Service account key file path is a symlink: #{key_file}" if File.symlink?(key_file)
+
       unless File.exist?(key_file)
         encoded = kubectl_get_secret(
           Config::SA_SECRET_NAME,
@@ -144,7 +147,8 @@ module ZitadelTui
           Config::SA_SECRET_KEY
         )
         decoded = Base64.decode64(encoded)
-        File.write(key_file, decoded)
+        # SECURITY FIX: Write sensitive key file with restricted permissions (0600)
+        File.write(key_file, decoded, mode: 'w', perm: 0o600)
       end
 
       JSON.parse(File.read(key_file))
