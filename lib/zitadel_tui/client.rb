@@ -162,7 +162,7 @@ module ZitadelTui
     def kubectl_get_secret(name, namespace, key)
       escaped_key = key.gsub('.', '\\.')
       cmd = TTY::Command.new(printer: :null)
-      result = cmd.run("kubectl get secret #{name} -n #{namespace} -o jsonpath='{.data.#{escaped_key}}'",
+      result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', "jsonpath={.data.#{escaped_key}}",
                        only_output_on_error: true).out.strip
       raise ApiError, "Failed to get secret #{name}" if result.empty?
 
