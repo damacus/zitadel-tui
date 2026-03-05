@@ -33,3 +33,5 @@ site/
 # OS
 .DS_Store
 Thumbs.db
+vendor/bundle/
+.bundle/
