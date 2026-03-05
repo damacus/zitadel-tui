@@ -212,18 +212,37 @@ module ZitadelTui
       JSON.parse(response.body)['access_token']
     end
 
+    def http_client
+      @http_client ||= begin
+        uri = URI(config.zitadel_url)
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == 'https'
+        # Performance: Start a persistent connection to reuse across API requests,
+        # avoiding redundant TCP and SSL handshake overheads.
+        http.start
+        http
+      end
+    end
+
     def api_request(method, path, body = nil)
       uri = URI("#{config.zitadel_url}#{path}")
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = true
-
       request = build_request(method, uri)
       request['Authorization'] = "Bearer #{@token || @pat}"
       request['Content-Type'] = 'application/json'
       request['Accept'] = 'application/json'
       request.body = body.to_json if body
 
-      response = http.request(request)
+      begin
+        response = http_client.request(request)
+      rescue EOFError, Errno::ECONNRESET, Errno::EPIPE => e
+        # If the keep-alive connection has been closed by the server,
+        # reconnect and retry the request once.
+        raise e if @http_client.nil? # If we failed to even establish the first connection, surface the error.
+
+        @http_client.finish if @http_client.started?
+        @http_client.start
+        response = @http_client.request(request)
+      end
       handle_response(response)
     end
 
