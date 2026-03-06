@@ -59,9 +59,7 @@ module ZitadelTui
     end
 
     def predefined_apps
-      return {} unless apps_config_file && File.exist?(apps_config_file)
-
-      yaml = YAML.safe_load_file(apps_config_file, symbolize_names: true)
+      yaml = load_apps_yaml
       return {} unless yaml && yaml[:apps]
 
       yaml[:apps].transform_values do |app|
@@ -73,9 +71,7 @@ module ZitadelTui
     end
 
     def predefined_users
-      return [] unless apps_config_file && File.exist?(apps_config_file)
-
-      yaml = YAML.safe_load_file(apps_config_file, symbolize_names: true)
+      yaml = load_apps_yaml
       return [] unless yaml && yaml[:users]
 
       yaml[:users].map do |user|
@@ -93,6 +89,15 @@ module ZitadelTui
     end
 
     private
+
+    def load_apps_yaml
+      return @load_apps_yaml if defined?(@load_apps_yaml)
+      return nil unless apps_config_file && File.exist?(apps_config_file)
+
+      # Performance: Memoize expensive YAML parsing and I/O operations
+      # since this configuration file rarely changes during a single run.
+      @load_apps_yaml = YAML.safe_load_file(apps_config_file, symbolize_names: true)
+    end
 
     def set_defaults
       @config.set(:sa_key_file, value: SA_KEY_FILE)
