@@ -141,14 +141,20 @@ module ZitadelTui
       raise SecurityError, "Service account key file path is a symlink: #{key_file}" if File.symlink?(key_file)
 
       unless File.exist?(key_file)
-        encoded = kubectl_get_secret(
-          Config::SA_SECRET_NAME,
-          Config::SA_SECRET_NAMESPACE,
-          Config::SA_SECRET_KEY
-        )
-        decoded = Base64.decode64(encoded)
-        # SECURITY FIX: Write sensitive key file with restricted permissions (0600)
-        File.write(key_file, decoded, mode: 'w', perm: 0o600)
+        begin
+          encoded = kubectl_get_secret(
+            Config::SA_SECRET_NAME,
+            Config::SA_SECRET_NAMESPACE,
+            Config::SA_SECRET_KEY
+          )
+          decoded = Base64.decode64(encoded)
+          # SECURITY FIX: Prevent TOCTOU symlink attacks by using File::CREAT | File::EXCL
+          File.open(key_file, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |f|
+            f.write(decoded)
+          end
+        rescue Errno::EEXIST
+          # File already exists, we can safely ignore and read it
+        end
       end
 
       JSON.parse(File.read(key_file))
