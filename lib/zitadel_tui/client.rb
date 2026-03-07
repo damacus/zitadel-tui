@@ -39,13 +39,15 @@ module ZitadelTui
     end
 
     # Project operations
-    def list_projects
-      result = api_request(:post, '/management/v1/projects/_search', { query: { limit: 100 } })
+    def list_projects(limit: 100)
+      result = api_request(:post, '/management/v1/projects/_search', { query: { limit: limit } })
       result['result'] || []
     end
 
     def get_default_project
-      projects = list_projects
+      # Performance: Reduce memory usage and network payload by fetching only 1
+      # project, instead of 100, when we only need the first default project.
+      projects = list_projects(limit: 1)
       raise ApiError, 'No projects found' if projects.empty?
 
       projects.first
@@ -78,7 +80,9 @@ module ZitadelTui
 
     def search_user(username)
       body = {
-        query: { offset: '0', limit: 100, asc: true },
+        # Performance: Limit search query to 1 since we only return the first matching
+        # user, reducing payload size and memory overhead.
+        query: { offset: '0', limit: 1, asc: true },
         queries: [{ userNameQuery: { userName: username, method: 'TEXT_QUERY_METHOD_EQUALS' } }]
       }
       result = api_request(:post, '/management/v1/users/_search', body)
