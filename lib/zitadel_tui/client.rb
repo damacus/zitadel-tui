@@ -211,6 +211,8 @@ module ZitadelTui
       jwt = create_jwt
 
       uri = URI("#{config.zitadel_url}/oauth/v2/token")
+      validate_secure_url!(uri)
+
       response = Net::HTTP.post_form(uri, {
                                        'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
                                        'scope' => 'openid urn:zitadel:iam:org:project:id:zitadel:aud',
@@ -225,6 +227,8 @@ module ZitadelTui
     def http_client
       @http_client ||= begin
         uri = URI(config.zitadel_url)
+        validate_secure_url!(uri)
+
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == 'https'
         # Performance: Start a persistent connection to reuse across API requests,
@@ -318,6 +322,13 @@ module ZitadelTui
 
     def default_grant_types
       %w[OIDC_GRANT_TYPE_AUTHORIZATION_CODE OIDC_GRANT_TYPE_REFRESH_TOKEN]
+    end
+
+    def validate_secure_url!(uri)
+      # 🛡️ Sentinel: Enforce HTTPS to prevent plain text transmission of Bearer tokens and passwords
+      return if uri.scheme == 'https' || %w[localhost 127.0.0.1 ::1].include?(uri.host)
+
+      raise SecurityError, "Refusing to send sensitive credentials over unencrypted HTTP connection to #{uri.host}"
     end
   end
 end
