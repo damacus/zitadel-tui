@@ -211,6 +211,8 @@ module ZitadelTui
       jwt = create_jwt
 
       uri = URI("#{config.zitadel_url}/oauth/v2/token")
+      validate_secure_connection!(uri)
+
       response = Net::HTTP.post_form(uri, {
                                        'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
                                        'scope' => 'openid urn:zitadel:iam:org:project:id:zitadel:aud',
@@ -225,6 +227,7 @@ module ZitadelTui
     def http_client
       @http_client ||= begin
         uri = URI(config.zitadel_url)
+        validate_secure_connection!(uri)
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == 'https'
         # Performance: Start a persistent connection to reuse across API requests,
@@ -277,6 +280,13 @@ module ZitadelTui
       end
 
       response.body.empty? ? {} : JSON.parse(response.body)
+    end
+
+    def validate_secure_connection!(uri)
+      # SECURITY FIX: Prevent unencrypted transmission of sensitive data
+      return if uri.scheme == 'https' || %w[localhost 127.0.0.1 ::1 [::1]].include?(uri.host)
+
+      raise SecurityError, "Insecure connection: Sensitive data must not be transmitted over plain HTTP (#{uri.host})"
     end
 
     def build_oidc_app_body(name, redirect_uris, options)

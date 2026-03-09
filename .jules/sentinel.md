@@ -11,3 +11,7 @@
 **Vulnerability:** The default service account key file path was set to `/tmp/zitadel-sa.json`.
 **Learning:** Storing sensitive credentials in a world-writable directory like `/tmp` exposes them to unauthorized access, privilege escalation, or symlink attacks by other users on the same system.
 **Prevention:** Store sensitive configuration and credential files in user-specific, restricted directories (e.g., `~/.zitadel-sa.json`) instead of shared temporary directories.
+## 2025-03-09 - Unencrypted Transmission of Sensitive Data
+**Vulnerability:** The HTTP client allowed transmitting sensitive credentials (like JWTs, passwords, or client secrets) over plain HTTP connections if the `zitadel_url` was configured as `http://`.
+**Learning:** Network clients often default to trusting the user's provided URL scheme. In tools managing highly sensitive infrastructure credentials, allowing plain HTTP connections over non-loopback networks exposes these credentials to interception or man-in-the-middle (MitM) attacks.
+**Prevention:** Always enforce encrypted connections (HTTPS) by explicitly rejecting `http://` URLs for any network requests transmitting sensitive data, except when targeting local loopback addresses (like `localhost` or `127.0.0.1`) for development and testing.
