@@ -25,7 +25,7 @@ RSpec.describe ZitadelTui::Config do
 
   describe '#sa_key_file' do
     it 'returns the default key file path' do
-      expect(config.sa_key_file).to eq('/tmp/zitadel-sa.json')
+      expect(config.sa_key_file).to eq(File.join(Dir.home, '.zitadel-sa.json'))
     end
   end
 

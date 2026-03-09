@@ -5,7 +5,7 @@ require 'yaml'
 
 module ZitadelTui
   class Config
-    SA_KEY_FILE = '/tmp/zitadel-sa.json'
+    SA_KEY_FILE = File.join(Dir.home, '.zitadel-sa.json')
     SA_SECRET_NAME = 'zitadel-admin-sa'
     SA_SECRET_NAMESPACE = 'authentication'
     SA_SECRET_KEY = 'zitadel-admin-sa.json'
