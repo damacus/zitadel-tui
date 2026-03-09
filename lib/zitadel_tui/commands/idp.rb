@@ -101,8 +101,19 @@ module ZitadelTui
 
       def fetch_google_credentials_from_k8s
         @ui.spinner('Fetching credentials from Kubernetes...') do
-          client_id = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-id')
-          client_secret = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-secret')
+          # Performance Optimization: Fetch both keys in a single kubectl call to avoid
+          # the overhead of launching multiple external processes.
+          cmd = TTY::Command.new(printer: :null)
+          result = cmd.run('kubectl', 'get', 'secret', Config::GOOGLE_IDP_SECRET,
+                           '-n', Config::SA_SECRET_NAMESPACE,
+                           '-o', 'jsonpath={.data.client-id} {.data.client-secret}',
+                           only_output_on_error: true).out.strip
+
+          raise "Secret #{Config::GOOGLE_IDP_SECRET} not found or incomplete" if result.empty? || !result.include?(' ')
+
+          client_id_b64, client_secret_b64 = result.split
+          client_id = Base64.decode64(client_id_b64)
+          client_secret = Base64.decode64(client_secret_b64)
 
           { client_id: client_id, client_secret: client_secret }
         end
@@ -120,16 +131,6 @@ module ZitadelTui
           key(:client_id).ask('Google Client ID:', required: true)
           key(:client_secret).mask('Google Client Secret:', required: true)
         end
-      end
-
-      def kubectl_get_secret(name, namespace, key)
-        escaped_key = key.gsub('.', '\\.')
-        cmd = TTY::Command.new(printer: :null)
-        result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', "jsonpath={.data.#{escaped_key}}",
-                         only_output_on_error: true).out.strip
-        raise "Secret #{name}/#{key} not found" if result.empty?
-
-        Base64.decode64(result)
       end
     end
   end
