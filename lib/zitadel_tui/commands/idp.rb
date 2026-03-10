@@ -101,10 +101,12 @@ module ZitadelTui
 
       def fetch_google_credentials_from_k8s
         @ui.spinner('Fetching credentials from Kubernetes...') do
-          client_id = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-id')
-          client_secret = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-secret')
+          # Performance Optimization: Batch external kubectl calls.
+          # Spawning a process is a significant bottleneck, so we fetch both secrets with a single call.
+          secrets = kubectl_get_secrets(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE,
+                                        %w[client-id client-secret])
 
-          { client_id: client_id, client_secret: client_secret }
+          { client_id: secrets['client-id'], client_secret: secrets['client-secret'] }
         end
       rescue StandardError => e
         @ui.error("Failed to fetch credentials: #{e.message}")
@@ -130,6 +132,20 @@ module ZitadelTui
         raise "Secret #{name}/#{key} not found" if result.empty?
 
         Base64.decode64(result)
+      end
+
+      def kubectl_get_secrets(name, namespace, keys)
+        # Performance: Fetch the entire secret as JSON to safely extract multiple keys in one kubectl call
+        cmd = TTY::Command.new(printer: :null)
+        result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', 'json',
+                         only_output_on_error: true).out.strip
+        raise "Secret #{name} not found" if result.empty?
+
+        secret_data = JSON.parse(result)['data'] || {}
+        missing_keys = keys.reject { |k| secret_data.key?(k) }
+        raise "Keys #{missing_keys.join(', ')} not found in secret #{name}" unless missing_keys.empty?
+
+        keys.to_h { |k| [k, Base64.decode64(secret_data[k])] }
       end
     end
   end
