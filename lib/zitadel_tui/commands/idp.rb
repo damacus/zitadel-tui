@@ -101,10 +101,10 @@ module ZitadelTui
 
       def fetch_google_credentials_from_k8s
         @ui.spinner('Fetching credentials from Kubernetes...') do
-          client_id = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-id')
-          client_secret = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-secret')
+          secret_data = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE)
 
-          { client_id: client_id, client_secret: client_secret }
+          { client_id: secret_data.fetch('client-id'),
+            client_secret: secret_data.fetch('client-secret') }
         end
       rescue StandardError => e
         @ui.error("Failed to fetch credentials: #{e.message}")
@@ -122,14 +122,17 @@ module ZitadelTui
         end
       end
 
-      def kubectl_get_secret(name, namespace, key)
-        escaped_key = key.gsub('.', '\\.')
+      def kubectl_get_secret(name, namespace)
         cmd = TTY::Command.new(printer: :null)
-        result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', "jsonpath={.data.#{escaped_key}}",
+        # SECURITY FIX: Prevent command injection by avoiding jsonpath string interpolation
+        # PERFORMANCE: Use -o json and parse the JSON output instead of using jsonpath
+        result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', 'json',
                          only_output_on_error: true).out.strip
-        raise "Secret #{name}/#{key} not found" if result.empty?
+        raise "Secret #{name} not found" if result.empty?
 
-        Base64.decode64(result)
+        parsed = JSON.parse(result)
+        data = parsed['data'] || {}
+        data.transform_values { |v| Base64.decode64(v) }
       end
     end
   end
