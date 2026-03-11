@@ -101,8 +101,25 @@ module ZitadelTui
 
       def fetch_google_credentials_from_k8s
         @ui.spinner('Fetching credentials from Kubernetes...') do
-          client_id = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-id')
-          client_secret = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-secret')
+          # ⚡ Bolt: Batch kubectl secret fetch for Google IDP
+          # Spawning external processes is a significant bottleneck. Batch external calls
+          # to reduce process and network API overhead. Using `-o json` ensures safe
+          # and reliable parsing compared to multiple jsonpath calls.
+          cmd = TTY::Command.new(printer: :null)
+          result = cmd.run('kubectl', 'get', 'secret', Config::GOOGLE_IDP_SECRET,
+                           '-n', Config::SA_SECRET_NAMESPACE, '-o', 'json',
+                           only_output_on_error: true).out.strip
+          raise "Secret #{Config::GOOGLE_IDP_SECRET} not found" if result.empty?
+
+          parsed = JSON.parse(result)
+          data = parsed['data'] || {}
+          raise 'Missing data in secret' if data.empty?
+
+          client_id = Base64.decode64(data['client-id'].to_s)
+          client_secret = Base64.decode64(data['client-secret'].to_s)
+
+          raise 'Missing client-id in secret' if client_id.empty?
+          raise 'Missing client-secret in secret' if client_secret.empty?
 
           { client_id: client_id, client_secret: client_secret }
         end
@@ -120,16 +137,6 @@ module ZitadelTui
           key(:client_id).ask('Google Client ID:', required: true)
           key(:client_secret).mask('Google Client Secret:', required: true)
         end
-      end
-
-      def kubectl_get_secret(name, namespace, key)
-        escaped_key = key.gsub('.', '\\.')
-        cmd = TTY::Command.new(printer: :null)
-        result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', "jsonpath={.data.#{escaped_key}}",
-                         only_output_on_error: true).out.strip
-        raise "Secret #{name}/#{key} not found" if result.empty?
-
-        Base64.decode64(result)
       end
     end
   end
