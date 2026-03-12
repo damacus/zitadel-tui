@@ -123,13 +123,16 @@ module ZitadelTui
       end
 
       def kubectl_get_secret(name, namespace, key)
-        escaped_key = key.gsub('.', '\\.')
         cmd = TTY::Command.new(printer: :null)
-        result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', "jsonpath={.data.#{escaped_key}}",
+        # SECURITY FIX: Use JSON output to avoid shell injection via interpolated string in jsonpath.
+        result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', 'json',
                          only_output_on_error: true).out.strip
-        raise "Secret #{name}/#{key} not found" if result.empty?
 
-        Base64.decode64(result)
+        parsed = JSON.parse(result)
+        secret_data = parsed.dig('data', key)
+        raise "Secret #{name}/#{key} not found" if secret_data.nil? || secret_data.empty?
+
+        Base64.decode64(secret_data)
       end
     end
   end

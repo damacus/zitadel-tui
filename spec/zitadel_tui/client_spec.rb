@@ -20,7 +20,8 @@ RSpec.describe ZitadelTui::Client do
   describe '#authenticate' do
     context 'when service account key file does not exist' do
       let(:cmd) { instance_double(TTY::Command) }
-      let(:cmd_result) { instance_double(TTY::Command::Result, out: Base64.encode64(sa_key_content)) }
+      let(:kubectl_json) { { data: { 'zitadel-admin-sa.json' => Base64.encode64(sa_key_content) } }.to_json }
+      let(:cmd_result) { instance_double(TTY::Command::Result, out: kubectl_json) }
 
       before do
         allow(File).to receive(:exist?).with(sa_key_file).and_return(false)
