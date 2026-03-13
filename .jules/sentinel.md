@@ -11,3 +11,8 @@
 **Vulnerability:** The default service account key file path was set to `/tmp/zitadel-sa.json`.
 **Learning:** Storing sensitive credentials in a world-writable directory like `/tmp` exposes them to unauthorized access, privilege escalation, or symlink attacks by other users on the same system.
 **Prevention:** Store sensitive configuration and credential files in user-specific, restricted directories (e.g., `~/.zitadel-sa.json`) instead of shared temporary directories.
+
+## 2025-03-13 - Command Injection via JSONPath Interpolation
+**Vulnerability:** Shell command injection risk when interpolating variables directly into `kubectl`'s `jsonpath` argument (e.g., `jsonpath={.data.#{key}}`).
+**Learning:** Even when avoiding shell wrappers, interpolating user or external data into structured query parameters like `jsonpath` can allow attackers to manipulate the query or cause command execution issues. In this case, malicious secret keys could break the `jsonpath` expression or attempt to inject commands.
+**Prevention:** Always use safe output formats like `-o json` when fetching data with external CLI tools and parse the output using native libraries (e.g., `JSON.parse` in Ruby) rather than relying on the CLI's internal querying mechanisms with interpolated strings.

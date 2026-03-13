@@ -20,7 +20,10 @@ RSpec.describe ZitadelTui::Client do
   describe '#authenticate' do
     context 'when service account key file does not exist' do
       let(:cmd) { instance_double(TTY::Command) }
-      let(:cmd_result) { instance_double(TTY::Command::Result, out: Base64.encode64(sa_key_content)) }
+      let(:cmd_result) do
+        mock_k8s_secret = { 'data' => { ZitadelTui::Config::SA_SECRET_KEY => Base64.encode64(sa_key_content) } }.to_json
+        instance_double(TTY::Command::Result, out: mock_k8s_secret)
+      end
 
       before do
         allow(File).to receive(:exist?).with(sa_key_file).and_return(false)
