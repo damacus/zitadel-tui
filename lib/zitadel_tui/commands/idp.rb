@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require 'json'
+require 'base64'
+
 module ZitadelTui
   module Commands
     class Idp
@@ -101,8 +104,28 @@ module ZitadelTui
 
       def fetch_google_credentials_from_k8s
         @ui.spinner('Fetching credentials from Kubernetes...') do
-          client_id = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-id')
-          client_secret = kubectl_get_secret(Config::GOOGLE_IDP_SECRET, Config::SA_SECRET_NAMESPACE, 'client-secret')
+          # Performance: Batch kubectl secret retrievals.
+          # Spawning external processes (like kubectl) is a significant bottleneck.
+          # By using `kubectl get secret ... -o json` once and parsing the output,
+          # we avoid multiple process spawns and reduce network API overhead.
+          cmd = TTY::Command.new(printer: :null)
+          result = cmd.run('kubectl', 'get', 'secret', Config::GOOGLE_IDP_SECRET,
+                           '-n', Config::SA_SECRET_NAMESPACE, '-o', 'json',
+                           only_output_on_error: true).out.strip
+
+          raise "Secret #{Config::GOOGLE_IDP_SECRET} not found" if result.empty?
+
+          parsed_secret = JSON.parse(result)
+          data = parsed_secret['data'] || {}
+
+          client_id_encoded = data['client-id']
+          client_secret_encoded = data['client-secret']
+
+          raise 'Key client-id not found in secret' if client_id_encoded.nil? || client_id_encoded.empty?
+          raise 'Key client-secret not found in secret' if client_secret_encoded.nil? || client_secret_encoded.empty?
+
+          client_id = Base64.decode64(client_id_encoded)
+          client_secret = Base64.decode64(client_secret_encoded)
 
           { client_id: client_id, client_secret: client_secret }
         end
@@ -120,16 +143,6 @@ module ZitadelTui
           key(:client_id).ask('Google Client ID:', required: true)
           key(:client_secret).mask('Google Client Secret:', required: true)
         end
-      end
-
-      def kubectl_get_secret(name, namespace, key)
-        escaped_key = key.gsub('.', '\\.')
-        cmd = TTY::Command.new(printer: :null)
-        result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', "jsonpath={.data.#{escaped_key}}",
-                         only_output_on_error: true).out.strip
-        raise "Secret #{name}/#{key} not found" if result.empty?
-
-        Base64.decode64(result)
       end
     end
   end
