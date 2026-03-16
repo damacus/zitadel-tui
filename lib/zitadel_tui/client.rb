@@ -172,13 +172,16 @@ module ZitadelTui
     end
 
     def kubectl_get_secret(name, namespace, key)
-      escaped_key = key.gsub('.', '\\.')
+      # SECURITY FIX: Prevent command injection by avoiding jsonpath string interpolation.
       cmd = TTY::Command.new(printer: :null)
-      result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', "jsonpath={.data.#{escaped_key}}",
+      result = cmd.run('kubectl', 'get', 'secret', name, '-n', namespace, '-o', 'json',
                        only_output_on_error: true).out.strip
       raise ApiError, "Failed to get secret #{name}" if result.empty?
 
-      result
+      secret_value = (JSON.parse(result)['data'] || {})[key]
+      raise ApiError, "Key #{key} not found in secret #{name}" if secret_value.nil? || secret_value.empty?
+
+      secret_value
     end
 
     def base64url_encode(data)
@@ -220,9 +223,17 @@ module ZitadelTui
                               'assertion' => jwt
                             })
 
-      # Performance: Reuse the persistent http_client for the token request instead of Net::HTTP.post_form
-      # to avoid an extra TCP and SSL handshake during authentication.
-      response = http_client.request(request)
+      # Performance: Use the memoized persistent HTTP connection for the token request
+      # to avoid the overhead of establishing a new TCP/SSL connection.
+      begin
+        response = http_client.request(request)
+      rescue EOFError, Errno::ECONNRESET, Errno::EPIPE => e
+        raise e if @http_client.nil?
+
+        @http_client.finish if @http_client.started?
+        @http_client.start
+        response = @http_client.request(request)
+      end
 
       raise AuthenticationError, "Token request failed: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
 
@@ -287,9 +298,7 @@ module ZitadelTui
     end
 
     def build_oidc_app_body(name, redirect_uris, options)
-      public_client = options[:public]
-      app_type, auth_method = oidc_client_types(public_client)
-
+      app_type, auth_method = oidc_client_types(options[:public])
       base_oidc_body(name, redirect_uris, app_type, auth_method).merge(
         grantTypes: options[:grant_types] || default_grant_types,
         postLogoutRedirectUris: options[:post_logout_uris] || [],
