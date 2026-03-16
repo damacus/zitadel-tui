@@ -39,13 +39,14 @@ module ZitadelTui
     end
 
     # Project operations
-    def list_projects
-      result = api_request(:post, '/management/v1/projects/_search', { query: { limit: 100 } })
+    def list_projects(limit: 100)
+      result = api_request(:post, '/management/v1/projects/_search', { query: { limit: limit } })
       result['result'] || []
     end
 
     def get_default_project
-      projects = list_projects
+      # Performance: Fetch only 1 project since we only need the first one, reducing API payload.
+      projects = list_projects(limit: 1)
       raise ApiError, 'No projects found' if projects.empty?
 
       projects.first
@@ -78,7 +79,8 @@ module ZitadelTui
 
     def search_user(username)
       body = {
-        query: { offset: '0', limit: 100, asc: true },
+        # Performance: We only need the first match, so limit to 1 to reduce DB work and API payload.
+        query: { offset: '0', limit: 1, asc: true },
         queries: [{ userNameQuery: { userName: username, method: 'TEXT_QUERY_METHOD_EQUALS' } }]
       }
       result = api_request(:post, '/management/v1/users/_search', body)
@@ -211,11 +213,16 @@ module ZitadelTui
       jwt = create_jwt
 
       uri = URI("#{config.zitadel_url}/oauth/v2/token")
-      response = Net::HTTP.post_form(uri, {
-                                       'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                                       'scope' => 'openid urn:zitadel:iam:org:project:id:zitadel:aud',
-                                       'assertion' => jwt
-                                     })
+      request = Net::HTTP::Post.new(uri)
+      request.set_form_data({
+                              'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                              'scope' => 'openid urn:zitadel:iam:org:project:id:zitadel:aud',
+                              'assertion' => jwt
+                            })
+
+      # Performance: Reuse the persistent http_client for the token request instead of Net::HTTP.post_form
+      # to avoid an extra TCP and SSL handshake during authentication.
+      response = http_client.request(request)
 
       raise AuthenticationError, "Token request failed: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
 
