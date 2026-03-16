@@ -214,11 +214,24 @@ module ZitadelTui
       jwt = create_jwt
 
       uri = URI("#{config.zitadel_url}/oauth/v2/token")
-      response = Net::HTTP.post_form(uri, {
-                                       'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                                       'scope' => 'openid urn:zitadel:iam:org:project:id:zitadel:aud',
-                                       'assertion' => jwt
-                                     })
+      request = Net::HTTP::Post.new(uri)
+      request.set_form_data({
+                              'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                              'scope' => 'openid urn:zitadel:iam:org:project:id:zitadel:aud',
+                              'assertion' => jwt
+                            })
+
+      # Performance: Use the memoized persistent HTTP connection for the token request
+      # to avoid the overhead of establishing a new TCP/SSL connection.
+      begin
+        response = http_client.request(request)
+      rescue EOFError, Errno::ECONNRESET, Errno::EPIPE => e
+        raise e if @http_client.nil?
+
+        @http_client.finish if @http_client.started?
+        @http_client.start
+        response = @http_client.request(request)
+      end
 
       raise AuthenticationError, "Token request failed: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
 
