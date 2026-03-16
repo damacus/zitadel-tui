@@ -16,3 +16,7 @@
 **Vulnerability:** Shell command injection risk when interpolating variables directly into `kubectl`'s `jsonpath` argument (e.g., `jsonpath={.data.#{key}}`).
 **Learning:** Even when avoiding shell wrappers, interpolating user or external data into structured query parameters like `jsonpath` can allow attackers to manipulate the query or cause command execution issues. In this case, malicious secret keys could break the `jsonpath` expression or attempt to inject commands.
 **Prevention:** Always use safe output formats like `-o json` when fetching data with external CLI tools and parse the output using native libraries (e.g., `JSON.parse` in Ruby) rather than relying on the CLI's internal querying mechanisms with interpolated strings.
+## 2025-05-18 - Insecure Configuration Loading from CWD
+**Vulnerability:** Path Hijacking / Insecure Configuration Loading via `Dir.pwd`.
+**Learning:** Appending the current working directory (`Dir.pwd`) to the configuration search paths allows local attackers to override the configuration (e.g., pointing `zitadel_url` to a rogue server to steal credentials) if the tool is run from an untrusted or shared directory.
+**Prevention:** Remove `@config.append_path(Dir.pwd)` and restrict configuration loading to secure, predictable locations like `Dir.home`.
