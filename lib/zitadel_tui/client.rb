@@ -214,11 +214,19 @@ module ZitadelTui
       jwt = create_jwt
 
       uri = URI("#{config.zitadel_url}/oauth/v2/token")
-      response = Net::HTTP.post_form(uri, {
-                                       'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                                       'scope' => 'openid urn:zitadel:iam:org:project:id:zitadel:aud',
-                                       'assertion' => jwt
-                                     })
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == 'https'
+      # SECURITY ENHANCEMENT: Add timeouts to prevent hanging on unresponsive endpoints (DoS risk)
+      http.open_timeout = 10
+      http.read_timeout = 30
+
+      request = Net::HTTP::Post.new(uri)
+      request.set_form_data({
+                              'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                              'scope' => 'openid urn:zitadel:iam:org:project:id:zitadel:aud',
+                              'assertion' => jwt
+                            })
+      response = http.request(request)
 
       raise AuthenticationError, "Token request failed: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
 
@@ -230,6 +238,9 @@ module ZitadelTui
         uri = URI(config.zitadel_url)
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == 'https'
+        # SECURITY ENHANCEMENT: Add timeouts to prevent hanging on unresponsive endpoints (DoS risk)
+        http.open_timeout = 10
+        http.read_timeout = 30
         # Performance: Start a persistent connection to reuse across API requests,
         # avoiding redundant TCP and SSL handshake overheads.
         http.start
