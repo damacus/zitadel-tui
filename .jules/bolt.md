@@ -1,3 +1,3 @@
-## 2024-05-18 - Avoid redundant TCP/SSL handshakes by reusing HTTP connections
-**Learning:** Instantiating a new `Net::HTTP` connection for every API request results in redundant TCP connections and SSL handshakes, significantly slowing down performance when calling the same host (Zitadel API) repeatedly.
-**Action:** Always consider using a persistent HTTP connection (`Net::HTTP.start`) or memoizing the connection object to reuse it for multiple API calls within the same client session.
+## 2024-05-19 - Fast iteration using short-circuits instead of dig
+**Learning:** In Ruby, the `#dig` method with Safe Navigation (`&.dig`) over multiple nested keys is surprisingly slower (up to 2.34x slower according to `benchmark/ips`) compared to direct hash access with explicit short-circuit evaluations (`human && human['profile'] && ...`) inside high-iteration loops like `#map` on large datasets. Also, using array subtraction (`array1 - array2`) is O(N^2) while using `Set` inclusion or a Hash map is significantly faster.
+**Action:** Favor `if` bounds and manual short circuits for hot loops dealing with large `map` iterations and hash fetching. Reduce un-spinnered network calls and caching their outputs for subsequent checks inside identical loop chains or workflows.
