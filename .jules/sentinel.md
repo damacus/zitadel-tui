@@ -16,3 +16,7 @@
 **Vulnerability:** Shell command injection risk when interpolating variables directly into `kubectl`'s `jsonpath` argument (e.g., `jsonpath={.data.#{key}}`).
 **Learning:** Even when avoiding shell wrappers, interpolating user or external data into structured query parameters like `jsonpath` can allow attackers to manipulate the query or cause command execution issues. In this case, malicious secret keys could break the `jsonpath` expression or attempt to inject commands.
 **Prevention:** Always use safe output formats like `-o json` when fetching data with external CLI tools and parse the output using native libraries (e.g., `JSON.parse` in Ruby) rather than relying on the CLI's internal querying mechanisms with interpolated strings.
+## 2025-03-17 - Local Configuration Hijacking Vulnerability
+**Vulnerability:** The configuration was appending the current working directory (`Dir.pwd`) to its search path via `@config.append_path(Dir.pwd)`.
+**Learning:** Adding the current working directory to configuration search paths is a significant security risk. If a user runs the CLI tool from a shared or untrusted directory (like `/tmp`), an attacker can place a malicious configuration file there that overrides legitimate settings (such as pointing `zitadel_url` to a malicious server to steal credentials).
+**Prevention:** Avoid appending `Dir.pwd` to configuration file search paths in CLI tools. Only load configuration from secure, user-controlled locations like the user's home directory.
