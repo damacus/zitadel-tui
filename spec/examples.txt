@@ -1,20 +1,20 @@
 example_id                                 | status | run_time        |
 ------------------------------------------ | ------ | --------------- |
-./spec/zitadel_tui/client_spec.rb[1:1:1:1] | passed | 0.01666 seconds |
-./spec/zitadel_tui/config_spec.rb[1:1:1]   | passed | 0.00203 seconds |
-./spec/zitadel_tui/config_spec.rb[1:2:1]   | passed | 0.00059 seconds |
-./spec/zitadel_tui/config_spec.rb[1:2:2]   | passed | 0.00061 seconds |
-./spec/zitadel_tui/config_spec.rb[1:3:1]   | passed | 0.00193 seconds |
-./spec/zitadel_tui/config_spec.rb[1:4:1]   | passed | 0.00059 seconds |
-./spec/zitadel_tui/config_spec.rb[1:4:2]   | passed | 0.00066 seconds |
-./spec/zitadel_tui/config_spec.rb[1:4:3]   | passed | 0.0014 seconds  |
-./spec/zitadel_tui/config_spec.rb[1:5:1]   | passed | 0.0007 seconds  |
-./spec/zitadel_tui/config_spec.rb[1:5:2]   | passed | 0.00058 seconds |
-./spec/zitadel_tui/config_spec.rb[1:5:3]   | passed | 0.00285 seconds |
-./spec/zitadel_tui/ui_spec.rb[1:1:1]       | passed | 0.00029 seconds |
+./spec/zitadel_tui/client_spec.rb[1:1:1:1] | passed | 0.01672 seconds |
+./spec/zitadel_tui/config_spec.rb[1:1:1]   | passed | 0.00178 seconds |
+./spec/zitadel_tui/config_spec.rb[1:2:1]   | passed | 0.00032 seconds |
+./spec/zitadel_tui/config_spec.rb[1:2:2]   | passed | 0.00043 seconds |
+./spec/zitadel_tui/config_spec.rb[1:3:1]   | passed | 0.00029 seconds |
+./spec/zitadel_tui/config_spec.rb[1:4:1]   | passed | 0.0004 seconds  |
+./spec/zitadel_tui/config_spec.rb[1:4:2]   | passed | 0.00032 seconds |
+./spec/zitadel_tui/config_spec.rb[1:4:3]   | passed | 0.0012 seconds  |
+./spec/zitadel_tui/config_spec.rb[1:5:1]   | passed | 0.00043 seconds |
+./spec/zitadel_tui/config_spec.rb[1:5:2]   | passed | 0.0006 seconds  |
+./spec/zitadel_tui/config_spec.rb[1:5:3]   | passed | 0.0064 seconds  |
+./spec/zitadel_tui/ui_spec.rb[1:1:1]       | passed | 0.00027 seconds |
 ./spec/zitadel_tui/ui_spec.rb[1:1:2]       | passed | 0.0002 seconds  |
-./spec/zitadel_tui/ui_spec.rb[1:1:3]       | passed | 0.00079 seconds |
-./spec/zitadel_tui/ui_spec.rb[1:2:1]       | passed | 0.0002 seconds  |
-./spec/zitadel_tui/ui_spec.rb[1:3:1]       | passed | 0.00027 seconds |
-./spec/zitadel_tui/ui_spec.rb[1:4:1]       | passed | 0.00018 seconds |
-./spec/zitadel_tui/ui_spec.rb[1:5:1]       | passed | 0.00276 seconds |
+./spec/zitadel_tui/ui_spec.rb[1:1:3]       | passed | 0.00086 seconds |
+./spec/zitadel_tui/ui_spec.rb[1:2:1]       | passed | 0.00019 seconds |
+./spec/zitadel_tui/ui_spec.rb[1:3:1]       | passed | 0.00025 seconds |
+./spec/zitadel_tui/ui_spec.rb[1:4:1]       | passed | 0.00287 seconds |
+./spec/zitadel_tui/ui_spec.rb[1:5:1]       | passed | 0.00027 seconds |

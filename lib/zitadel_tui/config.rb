@@ -20,7 +20,9 @@ module ZitadelTui
       @config.filename = 'zitadel-tui'
       @config.extname = '.yml'
       @config.append_path(Dir.home)
-      @config.append_path(Dir.pwd)
+      # SECURITY FIX: Do not load configuration from the current working directory.
+      # This prevents local attackers from overriding settings (e.g., redirecting
+      # URLs to steal credentials) if the tool is executed from an untrusted directory.
 
       set_defaults
       load_config
