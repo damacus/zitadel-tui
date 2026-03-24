@@ -39,13 +39,14 @@ module ZitadelTui
     end
 
     # Project operations
-    def list_projects
-      result = api_request(:post, '/management/v1/projects/_search', { query: { limit: 100 } })
+    def list_projects(limit: 100)
+      result = api_request(:post, '/management/v1/projects/_search', { query: { limit: limit } })
       result['result'] || []
     end
 
     def get_default_project
-      projects = list_projects
+      # Performance: Only fetch 1 project instead of 100 to avoid API over-fetching
+      projects = list_projects(limit: 1)
       raise ApiError, 'No projects found' if projects.empty?
 
       projects.first
@@ -78,7 +79,8 @@ module ZitadelTui
 
     def search_user(username)
       body = {
-        query: { offset: '0', limit: 100, asc: true },
+        # Performance: Limit results to 1 to reduce database and network overhead
+        query: { offset: '0', limit: 1, asc: true },
         queries: [{ userNameQuery: { userName: username, method: 'TEXT_QUERY_METHOD_EQUALS' } }]
       }
       result = api_request(:post, '/management/v1/users/_search', body)
