@@ -80,7 +80,7 @@ Use `--json` for machine-readable output.
 
 ```bash
 zitadel-tui --once apps list
-zitadel-tui --once --json auth validate
+zitadel-tui --once --json auth status
 zitadel-tui --once apps create --name grafana --redirect-uris https://grafana.example.com/login/generic_oauth
 zitadel-tui --once users create-admin \
   --username admin \
@@ -107,12 +107,12 @@ Example: `zitadel-tui --once --project-id 123456789 apps list`
 
 `--token <TOKEN>`
 : Authenticate with a PAT. Also available as `ZITADEL_TOKEN`.
-Example: `zitadel-tui --once --token "$ZITADEL_PAT" auth validate`
+Example: `zitadel-tui --once --token "$ZITADEL_PAT" auth status`
 
 `--service-account-file <SERVICE_ACCOUNT_FILE>`
 : Authenticate with a Zitadel service-account JSON key file. Also available as
 `ZITADEL_SERVICE_ACCOUNT_FILE`.
-Example: `zitadel-tui --once --service-account-file ./service-account.json auth validate`
+Example: `zitadel-tui --once --service-account-file ./service-account.json auth status`
 
 `--config <CONFIG>`
 : Read runtime configuration from a non-default TOML file instead of the
@@ -257,10 +257,10 @@ Also available as `device_client_id` in config.
 credentials or a new `auth login`.
 Example: `zitadel-tui --once auth logout`
 
-`auth validate`
+`auth status`
 : Resolve credentials, authenticate, and report the active auth source and
 project count. Works with any credential source including a cached session token.
-Example: `zitadel-tui --once --json auth validate`
+Example: `zitadel-tui --once --json auth status`
 
 #### `config`
 
@@ -345,7 +345,7 @@ After login, subsequent commands use the cached token automatically:
 
 ```bash
 zitadel-tui --once --host https://zitadel.example.com apps list
-zitadel-tui --once --host https://zitadel.example.com auth validate
+zitadel-tui --once --host https://zitadel.example.com auth status
 ```
 
 Tokens are silently refreshed when they expire. Log out with:

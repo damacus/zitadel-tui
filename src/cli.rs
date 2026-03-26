@@ -85,7 +85,7 @@ pub struct IdpsCommand {
 pub enum AuthAction {
     Login(LoginArgs),
     Logout,
-    Validate,
+    Status,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -264,7 +264,7 @@ mod tests {
     fn command_name_matches_variants() {
         assert_eq!(
             command_name(&Command::Auth(AuthCommand {
-                action: AuthAction::Validate
+                action: AuthAction::Status
             })),
             "auth"
         );

@@ -120,11 +120,11 @@ Example: `zitadel-tui --once --project-id 123456789 apps list`
 
 `--token <TOKEN>`
 : Overrides `pat`.
-Example: `zitadel-tui --once --token "$ZITADEL_PAT" auth validate`
+Example: `zitadel-tui --once --token "$ZITADEL_PAT" auth status`
 
 `--service-account-file <SERVICE_ACCOUNT_FILE>`
 : Overrides `service_account_file`.
-Example: `zitadel-tui --once --service-account-file ./service-account.json auth validate`
+Example: `zitadel-tui --once --service-account-file ./service-account.json auth status`
 
 `--config <CONFIG>`
 : Loads a non-default TOML file.
@@ -132,7 +132,7 @@ Example: `zitadel-tui --config ./config.toml`
 
 ## Notes
 
-- `auth validate`, `auth logout`, and `config show` have no command-specific flags
+- `auth status`, `auth logout`, and `config show` have no command-specific flags
 - `auth login` saves `device_client_id` to the canonical config path if you
   enter it interactively, so subsequent logins only need `auth login` with no flags
 - The token cache is host-specific; running `auth login` against a different

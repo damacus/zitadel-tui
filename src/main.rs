@@ -192,7 +192,7 @@ async fn execute_auth_command(
             token_cache::TokenCache::clear()?;
             Ok(serde_json::json!({ "status": "logged out" }))
         }
-        AuthAction::Validate => {
+        AuthAction::Status => {
             let host = resolved_host(args, config)?;
             let http = reqwest::Client::new();
             let auth = resolve_access_token(
