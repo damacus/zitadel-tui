@@ -8,7 +8,7 @@ use crate::{
     auth::resolve_access_token,
     cli::Cli,
     client::ZitadelClient,
-    config::{AppConfig, TemplatesFile},
+    config::{AppConfig, AppTemplate, TemplatesFile, UserTemplate},
     tui::{
         CanvasMode, ConfirmState, FormField, FormState, MessageState, PendingAction, Record,
         ResourceKind, TuiBootstrap,
@@ -124,19 +124,18 @@ impl TuiConductor {
         };
 
         self.project = project_id.clone();
-        self.app_records = client
-            .list_apps(&project_id)
-            .await
+        let (apps, users, idps) = tokio::join!(
+            client.list_apps(&project_id),
+            client.list_users(100),
+            client.list_idps()
+        );
+        self.app_records = apps
             .map(|apps| apps.into_iter().map(map_app_record).collect())
             .unwrap_or_default();
-        self.user_records = client
-            .list_users(100)
-            .await
+        self.user_records = users
             .map(|users| users.into_iter().map(map_user_record).collect())
             .unwrap_or_default();
-        self.idp_records = client
-            .list_idps()
-            .await
+        self.idp_records = idps
             .map(|idps| idps.into_iter().map(map_idp_record).collect())
             .unwrap_or_default();
         self.client = Some(client);
@@ -445,7 +444,6 @@ impl TuiConductor {
                     let result = client.delete_app(&self.project, &app_id).await;
                     self.finish_simple_mutation(
                         result,
-                        ResourceKind::Applications,
                         "Application deleted",
                         vec![format!("Deleted application {name}.")],
                     )
@@ -489,7 +487,6 @@ impl TuiConductor {
                     let result = client.grant_iam_owner(&user_id).await;
                     self.finish_simple_mutation(
                         result,
-                        ResourceKind::Users,
                         "IAM_OWNER granted",
                         vec![
                             format!("Granted IAM_OWNER to {username}."),
@@ -517,7 +514,6 @@ impl TuiConductor {
     async fn finish_simple_mutation(
         &mut self,
         result: Result<Value>,
-        _resource: ResourceKind,
         title: &str,
         lines: Vec<String>,
     ) -> CanvasMode {
@@ -604,36 +600,80 @@ impl TuiConductor {
         let Some(client) = self.client.as_ref() else {
             return error_mode("Authentication required", "Run setup first.");
         };
+        let selected_templates: Vec<(String, AppTemplate)> = form
+            .fields
+            .iter()
+            .filter(|field| checkbox_enabled(&field.value))
+            .filter_map(|field| {
+                self.templates
+                    .apps
+                    .get(&field.label)
+                    .cloned()
+                    .map(|template| (field.label.clone(), template))
+            })
+            .collect();
+
         let mut created = Vec::new();
-        for field in &form.fields {
-            if checkbox_enabled(&field.value) {
-                let Some(template) = self.templates.apps.get(&field.label) else {
-                    continue;
-                };
-                match client
+        for chunk in selected_templates.chunks(2) {
+            match chunk {
+                [first] => match client
                     .create_oidc_app(
                         &self.project,
-                        &field.label,
-                        template.redirect_uris.clone(),
-                        template.public,
+                        &first.0,
+                        first.1.redirect_uris.clone(),
+                        first.1.public,
                     )
                     .await
                 {
-                    Ok(value) => created.push(format!(
-                        "{} -> {}",
-                        field.label,
-                        value
-                            .get("clientId")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("created")
-                    )),
+                    Ok(value) => created.push(app_creation_summary(&first.0, &value)),
                     Err(error) => {
                         return error_mode(
                             "Quick setup failed",
-                            &format!("{} failed: {}", field.label, error),
+                            &format!("{} failed: {}", first.0, error),
                         )
                     }
+                },
+                [first, second] => {
+                    let first_name = first.0.clone();
+                    let first_template = first.1.clone();
+                    let second_name = second.0.clone();
+                    let second_template = second.1.clone();
+                    let (first_result, second_result) = tokio::join!(
+                        client.create_oidc_app(
+                            &self.project,
+                            &first_name,
+                            first_template.redirect_uris.clone(),
+                            first_template.public,
+                        ),
+                        client.create_oidc_app(
+                            &self.project,
+                            &second_name,
+                            second_template.redirect_uris.clone(),
+                            second_template.public,
+                        ),
+                    );
+                    let first_value = match first_result {
+                        Ok(value) => value,
+                        Err(error) => {
+                            return error_mode(
+                                "Quick setup failed",
+                                &format!("{} failed: {}", first_name, error),
+                            )
+                        }
+                    };
+                    let second_value = match second_result {
+                        Ok(value) => value,
+                        Err(error) => {
+                            return error_mode(
+                                "Quick setup failed",
+                                &format!("{} failed: {}", second_name, error),
+                            )
+                        }
+                    };
+                    created.push(app_creation_summary(&first_name, &first_value));
+                    created.push(app_creation_summary(&second_name, &second_value));
                 }
+                _ => unreachable!("chunks(2) yields at most two items"),
             }
         }
         self.refresh_runtime().await;
@@ -732,41 +772,53 @@ impl TuiConductor {
         let Some(client) = self.client.as_ref() else {
             return error_mode("Authentication required", "Run setup first.");
         };
+        let selected_users: Vec<UserTemplate> = form
+            .fields
+            .iter()
+            .enumerate()
+            .filter(|(_, field)| checkbox_enabled(&field.value))
+            .filter_map(|(index, _)| self.templates.users.get(index).cloned())
+            .collect();
+
         let mut lines = Vec::new();
-        for (index, field) in form.fields.iter().enumerate() {
-            if !checkbox_enabled(&field.value) {
-                continue;
-            }
-            let Some(user) = self.templates.users.get(index) else {
-                continue;
-            };
-            let result = client
-                .create_human_user(&user.email, &user.first_name, &user.last_name, None)
-                .await;
-            match result {
-                Ok(value) => {
-                    lines.push(format!("Created {}", user.email));
-                    if user.admin {
-                        if let Some(user_id) = value.get("userId").and_then(|v| v.as_str()) {
-                            if let Err(error) = client.grant_iam_owner(user_id).await {
-                                return error_mode(
-                                    "Quick setup failed",
-                                    &format!(
-                                        "Failed IAM_OWNER grant for {}: {}",
-                                        user.email, error
-                                    ),
-                                );
-                            }
-                            lines.push(format!("Granted IAM_OWNER to {}", user.email));
+        for chunk in selected_users.chunks(2) {
+            match chunk {
+                [first] => match create_quick_user(client, first.clone()).await {
+                    Ok(mut created_lines) => lines.append(&mut created_lines),
+                    Err(error) => {
+                        return error_mode(
+                            "Quick setup failed",
+                            &format!("Failed to create {}: {}", first.email, error),
+                        )
+                    }
+                },
+                [first, second] => {
+                    let first_user = first.clone();
+                    let second_user = second.clone();
+                    let (first_result, second_result) = tokio::join!(
+                        create_quick_user(client, first_user),
+                        create_quick_user(client, second_user),
+                    );
+                    match first_result {
+                        Ok(mut created_lines) => lines.append(&mut created_lines),
+                        Err(error) => {
+                            return error_mode(
+                                "Quick setup failed",
+                                &format!("Failed to create {}: {}", first.email, error),
+                            )
+                        }
+                    }
+                    match second_result {
+                        Ok(mut created_lines) => lines.append(&mut created_lines),
+                        Err(error) => {
+                            return error_mode(
+                                "Quick setup failed",
+                                &format!("Failed to create {}: {}", second.email, error),
+                            )
                         }
                     }
                 }
-                Err(error) => {
-                    return error_mode(
-                        "Quick setup failed",
-                        &format!("Failed to create {}: {}", user.email, error),
-                    )
-                }
+                _ => unreachable!("chunks(2) yields at most two items"),
             }
         }
         self.refresh_runtime().await;
@@ -1093,6 +1145,32 @@ fn split_csv(input: &str) -> Vec<String> {
         .collect()
 }
 
+fn app_creation_summary(name: &str, value: &Value) -> String {
+    format!(
+        "{} -> {}",
+        name,
+        value
+            .get("clientId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("created")
+    )
+}
+
+async fn create_quick_user(client: &ZitadelClient, user: UserTemplate) -> Result<Vec<String>> {
+    let mut lines = Vec::new();
+    let result = client
+        .create_human_user(&user.email, &user.first_name, &user.last_name, None)
+        .await?;
+    lines.push(format!("Created {}", user.email));
+    if user.admin {
+        if let Some(user_id) = result.get("userId").and_then(|v| v.as_str()) {
+            client.grant_iam_owner(user_id).await?;
+            lines.push(format!("Granted IAM_OWNER to {}", user.email));
+        }
+    }
+    Ok(lines)
+}
+
 fn checkbox_enabled(value: &str) -> bool {
     matches!(value, "true" | "1" | "yes" | "on")
 }
@@ -1108,6 +1186,7 @@ fn string_field(value: &Value, key: &str, fallback: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Matcher;
 
     #[test]
     fn split_csv_filters_empty_entries() {
@@ -1144,5 +1223,330 @@ mod tests {
 
         let mode = conductor.begin_action(ResourceKind::Config, 1, None);
         assert!(matches!(mode, CanvasMode::Browse));
+    }
+
+    fn test_conductor(host: &str) -> TuiConductor {
+        TuiConductor {
+            cli: Cli {
+                host: Some(host.to_string()),
+                project_id: Some("project-1".to_string()),
+                token: None,
+                service_account_file: None,
+                config: None,
+                json: false,
+                once: false,
+                command: None,
+            },
+            config: AppConfig {
+                zitadel_url: Some(host.to_string()),
+                project_id: Some("project-1".to_string()),
+                pat: Some("test-token".to_string()),
+                ..AppConfig::default()
+            },
+            templates: TemplatesFile {
+                apps: Default::default(),
+                users: Default::default(),
+            },
+            host: host.to_string(),
+            project: "project-1".to_string(),
+            auth_label: "PAT".to_string(),
+            setup_required: false,
+            client: None,
+            app_records: vec![],
+            user_records: vec![],
+            idp_records: vec![],
+        }
+    }
+
+    fn app_template(name: &str) -> AppTemplate {
+        AppTemplate {
+            redirect_uris: vec![format!("https://{name}.example.com/callback")],
+            public: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_runtime_loads_all_record_types() {
+        let mut server = mockito::Server::new_async().await;
+        let _auth = server
+            .mock("POST", "/oauth/v2/token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"access_token":"test-token"}"#)
+            .create_async()
+            .await;
+        let _projects = server
+            .mock("POST", "/management/v1/projects/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[{"id":"project-1"}]}"#)
+            .create_async()
+            .await;
+        let _apps = server
+            .mock("POST", "/management/v1/projects/project-1/apps/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[{"id":"app-1","name":"grafana","oidcConfig":{"authMethodType":"OIDC_AUTH_METHOD_TYPE_BASIC","clientId":"cid-1","redirectUris":["https://grafana.example.com/callback"]},"state":"ACTIVE"}]}"#)
+            .create_async()
+            .await;
+        let _users = server
+            .mock("POST", "/management/v1/users/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[{"id":"user-1","userName":"admin","state":"ACTIVE","human":{"email":{"email":"admin@example.com"},"profile":{"displayName":"Admin User"}}}]}"#)
+            .create_async()
+            .await;
+        let _idps = server
+            .mock("POST", "/admin/v1/idps/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"result":[{"id":"idp-1","name":"Google","state":"ACTIVE","type":"google"}]}"#,
+            )
+            .create_async()
+            .await;
+
+        let mut conductor = test_conductor(&server.url());
+        conductor.refresh_runtime().await;
+
+        assert_eq!(conductor.app_records.len(), 1);
+        assert_eq!(conductor.user_records.len(), 1);
+        assert_eq!(conductor.idp_records.len(), 1);
+        assert_eq!(conductor.project, "project-1");
+        assert_eq!(conductor.auth_label, "config PAT");
+    }
+
+    #[tokio::test]
+    async fn quick_setup_apps_batches_creates_and_refreshes() {
+        let mut server = mockito::Server::new_async().await;
+        let _auth = server
+            .mock("POST", "/oauth/v2/token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"access_token":"test-token"}"#)
+            .create_async()
+            .await;
+        let _projects = server
+            .mock("POST", "/management/v1/projects/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[{"id":"project-1"}]}"#)
+            .create_async()
+            .await;
+        let create_grafana = server
+            .mock("POST", "/management/v1/projects/project-1/apps/oidc")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::PartialJson(serde_json::json!({
+                "name": "grafana",
+                "redirectUris": ["https://grafana.example.com/callback"],
+                "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC"
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"clientId":"cid-grafana"}"#)
+            .create_async()
+            .await;
+        let create_mealie = server
+            .mock("POST", "/management/v1/projects/project-1/apps/oidc")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::PartialJson(serde_json::json!({
+                "name": "mealie",
+                "redirectUris": ["https://mealie.example.com/callback"],
+                "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC"
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"clientId":"cid-mealie"}"#)
+            .create_async()
+            .await;
+        let _apps = server
+            .mock("POST", "/management/v1/projects/project-1/apps/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[]}"#)
+            .create_async()
+            .await;
+        let _users = server
+            .mock("POST", "/management/v1/users/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[]}"#)
+            .create_async()
+            .await;
+        let _idps = server
+            .mock("POST", "/admin/v1/idps/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[]}"#)
+            .create_async()
+            .await;
+
+        let mut conductor = test_conductor(&server.url());
+        conductor
+            .templates
+            .apps
+            .insert("grafana".to_string(), app_template("grafana"));
+        conductor
+            .templates
+            .apps
+            .insert("mealie".to_string(), app_template("mealie"));
+        conductor.client =
+            Some(ZitadelClient::new(server.url(), "test-token".to_string()).unwrap());
+        let form = FormState {
+            title: "Quick setup applications".to_string(),
+            description: String::new(),
+            submit_label: String::new(),
+            fields: vec![
+                checkbox_field("template_app", "grafana", true, ""),
+                checkbox_field("template_app", "mealie", true, ""),
+            ],
+            selected_field: 0,
+            pending: PendingAction::QuickSetupApplications,
+        };
+
+        let mode = conductor.quick_setup_apps(&form).await;
+
+        create_grafana.assert_async().await;
+        create_mealie.assert_async().await;
+        assert!(matches!(mode, CanvasMode::Success(_)));
+        assert_eq!(conductor.app_records.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn quick_setup_users_batches_creates_and_grants_admins() {
+        let mut server = mockito::Server::new_async().await;
+        let _auth = server
+            .mock("POST", "/oauth/v2/token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"access_token":"test-token"}"#)
+            .create_async()
+            .await;
+        let _projects = server
+            .mock("POST", "/management/v1/projects/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[{"id":"project-1"}]}"#)
+            .create_async()
+            .await;
+        let create_admin = server
+            .mock("POST", "/v2/users/human")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::PartialJson(serde_json::json!({
+                "username": "admin",
+                "profile": {
+                    "givenName": "Admin",
+                    "familyName": "User"
+                },
+                "email": {
+                    "email": "admin@example.com",
+                    "isVerified": true
+                }
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"userId":"user-admin"}"#)
+            .create_async()
+            .await;
+        let create_user = server
+            .mock("POST", "/v2/users/human")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::PartialJson(serde_json::json!({
+                "username": "user",
+                "profile": {
+                    "givenName": "Regular",
+                    "familyName": "User"
+                },
+                "email": {
+                    "email": "user@example.com",
+                    "isVerified": true
+                }
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"userId":"user-regular"}"#)
+            .create_async()
+            .await;
+        let grant_admin = server
+            .mock("POST", "/admin/v1/members")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::PartialJson(serde_json::json!({
+                "userId": "user-admin",
+                "roles": ["IAM_OWNER"]
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{}"#)
+            .create_async()
+            .await;
+        let _apps = server
+            .mock("POST", "/management/v1/projects/project-1/apps/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[]}"#)
+            .create_async()
+            .await;
+        let _users = server
+            .mock("POST", "/management/v1/users/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[]}"#)
+            .create_async()
+            .await;
+        let _idps = server
+            .mock("POST", "/admin/v1/idps/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result":[]}"#)
+            .create_async()
+            .await;
+
+        let mut conductor = test_conductor(&server.url());
+        conductor.templates.users = vec![
+            UserTemplate {
+                email: "admin@example.com".to_string(),
+                first_name: "Admin".to_string(),
+                last_name: "User".to_string(),
+                admin: true,
+            },
+            UserTemplate {
+                email: "user@example.com".to_string(),
+                first_name: "Regular".to_string(),
+                last_name: "User".to_string(),
+                admin: false,
+            },
+        ];
+        conductor.client =
+            Some(ZitadelClient::new(server.url(), "test-token".to_string()).unwrap());
+        let form = FormState {
+            title: "Quick setup users".to_string(),
+            description: String::new(),
+            submit_label: String::new(),
+            fields: vec![
+                checkbox_field("template_user", "admin@example.com", true, ""),
+                checkbox_field("template_user", "user@example.com", true, ""),
+            ],
+            selected_field: 0,
+            pending: PendingAction::QuickSetupUsers,
+        };
+
+        let mode = conductor.quick_setup_users(&form).await;
+
+        create_admin.assert_async().await;
+        create_user.assert_async().await;
+        grant_admin.assert_async().await;
+        assert!(matches!(mode, CanvasMode::Success(_)));
     }
 }
