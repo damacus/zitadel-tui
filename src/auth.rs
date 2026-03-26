@@ -291,14 +291,6 @@ mod tests {
         env::temp_dir().join(format!("zitadel-tui-test-tokens-{unique}.json"))
     }
 
-    fn temp_cache_path() -> std::path::PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        env::temp_dir().join(format!("zitadel-tui-test-tokens-{unique}.json"))
-    }
-
     fn temp_file(name: &str, contents: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
