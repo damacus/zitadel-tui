@@ -89,7 +89,43 @@ pub async fn resolve_access_token(
         });
     }
 
-    bail!("no credentials available; use --token, --service-account-file, env vars, or config")
+    // Token cache (OIDC session) — with auto-refresh
+    if let Ok(Some(cache)) = crate::token_cache::TokenCache::load() {
+        if !cache.is_expired() {
+            return Ok(ResolvedAuth {
+                token: cache.access_token,
+                source: "session token",
+            });
+        }
+        if let Some(refresh_token) = &cache.refresh_token {
+            match crate::oidc::refresh_access_token(
+                client,
+                &cache.host,
+                &cache.client_id,
+                refresh_token,
+            )
+            .await
+            {
+                Ok(tokens) => {
+                    let updated = crate::token_cache::TokenCache {
+                        access_token: tokens.access_token.clone(),
+                        refresh_token: tokens.refresh_token.or_else(|| Some(refresh_token.clone())),
+                        expires_at: Some(crate::oidc::expires_at_from_now(tokens.expires_in)),
+                        client_id: cache.client_id,
+                        host: cache.host,
+                    };
+                    let _ = updated.save();
+                    return Ok(ResolvedAuth {
+                        token: tokens.access_token,
+                        source: "session token (refreshed)",
+                    });
+                }
+                Err(_) => {}
+            }
+        }
+    }
+
+    bail!("no credentials available; use --token, --service-account-file, env vars, config, or `auth login`")
 }
 
 async fn exchange_service_account(
@@ -165,6 +201,14 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    fn temp_cache_path() -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        env::temp_dir().join(format!("zitadel-tui-test-tokens-{unique}.json"))
     }
 
     fn temp_file(name: &str, contents: &str) -> PathBuf {
@@ -356,6 +400,99 @@ ehuWWRLZbrtEDcwsUeaYjDGj
 
         mock.assert_async().await;
         assert!(error.contains("missing access_token"));
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn resolves_from_valid_token_cache() {
+        let cache_path = temp_cache_path();
+        env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
+
+        let _guard = test_lock();
+        let original_token = env::var("ZITADEL_TOKEN").ok();
+        let original_sa = env::var("ZITADEL_SERVICE_ACCOUNT_FILE").ok();
+        env::remove_var("ZITADEL_TOKEN");
+        env::remove_var("ZITADEL_SERVICE_ACCOUNT_FILE");
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let cache = crate::token_cache::TokenCache {
+            access_token: "cached-token".to_string(),
+            refresh_token: None,
+            expires_at: Some(now + 3600),
+            client_id: "c1".to_string(),
+            host: "https://zitadel.example.com".to_string(),
+        };
+        cache.save().unwrap();
+
+        let http = Client::new();
+        let config = AppConfig::default();
+        let auth = resolve_access_token(&http, "https://zitadel.example.com", None, None, &config)
+            .await
+            .unwrap();
+
+        env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
+        let _ = std::fs::remove_file(&cache_path);
+        if let Some(v) = original_token {
+            env::set_var("ZITADEL_TOKEN", v);
+        }
+        if let Some(v) = original_sa {
+            env::set_var("ZITADEL_SERVICE_ACCOUNT_FILE", v);
+        }
+
+        assert_eq!(auth.token, "cached-token");
+        assert_eq!(auth.source, "session token");
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn auto_refreshes_expired_token_cache() {
+        let mut server = Server::new_async().await;
+        server
+            .mock("POST", "/oauth/v2/token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"access_token":"refreshed-token","expires_in":3600}"#)
+            .create_async()
+            .await;
+
+        let cache_path = temp_cache_path();
+        env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
+
+        let _guard = test_lock();
+        let original_token = env::var("ZITADEL_TOKEN").ok();
+        let original_sa = env::var("ZITADEL_SERVICE_ACCOUNT_FILE").ok();
+        env::remove_var("ZITADEL_TOKEN");
+        env::remove_var("ZITADEL_SERVICE_ACCOUNT_FILE");
+
+        let cache = crate::token_cache::TokenCache {
+            access_token: "expired-token".to_string(),
+            refresh_token: Some("my-refresh-token".to_string()),
+            expires_at: Some(0), // expired
+            client_id: "c1".to_string(),
+            host: server.url(),
+        };
+        cache.save().unwrap();
+
+        let http = Client::new();
+        let config = AppConfig::default();
+        let auth = resolve_access_token(&http, &server.url(), None, None, &config)
+            .await
+            .unwrap();
+
+        env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
+        let _ = std::fs::remove_file(&cache_path);
+        if let Some(v) = original_token {
+            env::set_var("ZITADEL_TOKEN", v);
+        }
+        if let Some(v) = original_sa {
+            env::set_var("ZITADEL_SERVICE_ACCOUNT_FILE", v);
+        }
+
+        assert_eq!(auth.token, "refreshed-token");
+        assert!(auth.source.contains("refreshed"));
     }
 
     #[allow(clippy::await_holding_lock)]
