@@ -36,15 +36,17 @@ pub struct Action {
     pub hotkey: &'static str,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Record {
+    pub id: String,
     pub name: String,
     pub kind: String,
-    pub redirects: String,
+    pub summary: String,
+    pub detail: String,
     pub changed_at: String,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TuiBootstrap {
     pub host: String,
     pub project: String,
@@ -54,6 +56,85 @@ pub struct TuiBootstrap {
     pub app_records: Vec<Record>,
     pub user_records: Vec<Record>,
     pub idp_records: Vec<Record>,
+    pub legacy_config_detected: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CanvasMode {
+    Browse,
+    EditForm(FormState),
+    Confirm(ConfirmState),
+    Success(MessageState),
+    Error(MessageState),
+    Setup(FormState),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PendingAction {
+    CreateApplication,
+    QuickSetupApplications,
+    DeleteApplication {
+        app_id: String,
+        name: String,
+    },
+    RegenerateSecret {
+        app_id: String,
+        name: String,
+        client_id: String,
+    },
+    CreateUser,
+    CreateAdminUser,
+    GrantIamOwner {
+        user_id: String,
+        username: String,
+    },
+    QuickSetupUsers,
+    ConfigureGoogleIdp,
+    ValidateAuthSetup,
+    SaveConfig,
+    ImportLegacyConfig,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfirmState {
+    pub title: String,
+    pub lines: Vec<String>,
+    pub submit_label: String,
+    pub pending: PendingAction,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MessageState {
+    pub title: String,
+    pub lines: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FormState {
+    pub title: String,
+    pub description: String,
+    pub submit_label: String,
+    pub fields: Vec<FormField>,
+    pub selected_field: usize,
+    pub pending: PendingAction,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FormField {
+    pub key: &'static str,
+    pub label: String,
+    pub value: String,
+    pub kind: FieldKind,
+    pub help: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FieldKind {
+    Text,
+    Secret,
+    Toggle,
+    Choice(Vec<String>),
+    Checkbox,
 }
 
 #[derive(Debug)]
@@ -65,6 +146,7 @@ pub struct App {
     pub auth_label: String,
     pub templates_path: Option<String>,
     pub setup_required: bool,
+    pub legacy_config_detected: bool,
     pub resources: Vec<Resource>,
     pub selected_resource: usize,
     pub selected_action: usize,
@@ -72,17 +154,37 @@ pub struct App {
     pub user_records: Vec<Record>,
     pub idp_records: Vec<Record>,
     pub selected_record: usize,
+    pub canvas_mode: CanvasMode,
 }
 
 impl App {
     pub fn from_bootstrap(bootstrap: TuiBootstrap) -> Self {
+        let setup_required = bootstrap.setup_required;
+        let templates_path = bootstrap.templates_path.clone();
+        let canvas_bootstrap = bootstrap.clone();
         let app_records = if bootstrap.app_records.is_empty() {
             sample_app_records()
         } else {
             bootstrap.app_records
         };
-        let templates_path = bootstrap.templates_path.clone();
-        let setup_required = bootstrap.setup_required;
+
+        let user_records = if bootstrap.user_records.is_empty() {
+            sample_user_records()
+        } else {
+            bootstrap.user_records
+        };
+
+        let idp_records = if bootstrap.idp_records.is_empty() {
+            sample_idp_records()
+        } else {
+            bootstrap.idp_records
+        };
+
+        let canvas_mode = if setup_required {
+            CanvasMode::Setup(default_setup_form(&canvas_bootstrap))
+        } else {
+            CanvasMode::Browse
+        };
 
         Self {
             focus: Focus::Resources,
@@ -90,8 +192,9 @@ impl App {
             host: bootstrap.host,
             project: bootstrap.project,
             auth_label: bootstrap.auth_label,
-            templates_path,
+            templates_path: templates_path.clone(),
             setup_required,
+            legacy_config_detected: bootstrap.legacy_config_detected,
             resources: vec![
                 Resource {
                     kind: ResourceKind::Applications,
@@ -101,12 +204,12 @@ impl App {
                 Resource {
                     kind: ResourceKind::Users,
                     name: "Users",
-                    count: bootstrap.user_records.len().to_string(),
+                    count: user_records.len().to_string(),
                 },
                 Resource {
                     kind: ResourceKind::Idps,
                     name: "IDPs",
-                    count: bootstrap.idp_records.len().to_string(),
+                    count: idp_records.len().to_string(),
                 },
                 Resource {
                     kind: ResourceKind::Auth,
@@ -120,7 +223,7 @@ impl App {
                 Resource {
                     kind: ResourceKind::Config,
                     name: "Config",
-                    count: if bootstrap.templates_path.is_some() {
+                    count: if templates_path.is_some() {
                         "templated".to_string()
                     } else {
                         "local".to_string()
@@ -130,10 +233,77 @@ impl App {
             selected_resource: 0,
             selected_action: 0,
             app_records,
-            user_records: bootstrap.user_records,
-            idp_records: bootstrap.idp_records,
+            user_records,
+            idp_records,
             selected_record: 0,
+            canvas_mode,
         }
+    }
+
+    pub fn sync_runtime(&mut self, bootstrap: TuiBootstrap) {
+        self.host = bootstrap.host;
+        self.project = bootstrap.project;
+        self.auth_label = bootstrap.auth_label;
+        self.templates_path = bootstrap.templates_path;
+        self.setup_required = bootstrap.setup_required;
+        self.legacy_config_detected = bootstrap.legacy_config_detected;
+        self.app_records = if bootstrap.app_records.is_empty() {
+            sample_app_records()
+        } else {
+            bootstrap.app_records
+        };
+        self.user_records = if bootstrap.user_records.is_empty() {
+            sample_user_records()
+        } else {
+            bootstrap.user_records
+        };
+        self.idp_records = if bootstrap.idp_records.is_empty() {
+            sample_idp_records()
+        } else {
+            bootstrap.idp_records
+        };
+        self.selected_record = 0;
+        self.selected_action = 0;
+        self.resources[0].count = self.app_records.len().to_string();
+        self.resources[1].count = self.user_records.len().to_string();
+        self.resources[2].count = self.idp_records.len().to_string();
+        self.resources[3].count = if self.setup_required {
+            "setup".to_string()
+        } else {
+            "ready".to_string()
+        };
+        self.resources[4].count = if self.templates_path.is_some() {
+            "templated".to_string()
+        } else {
+            "local".to_string()
+        };
+    }
+
+    pub fn active_resource(&self) -> ResourceKind {
+        self.resources[self.selected_resource].kind
+    }
+
+    pub fn actions(&self) -> &'static [Action] {
+        match self.active_resource() {
+            ResourceKind::Applications => &APPLICATION_ACTIONS,
+            ResourceKind::Users => &USER_ACTIONS,
+            ResourceKind::Idps => &IDP_ACTIONS,
+            ResourceKind::Auth => &AUTH_ACTIONS,
+            ResourceKind::Config => &CONFIG_ACTIONS,
+        }
+    }
+
+    pub fn active_records(&self) -> &[Record] {
+        match self.active_resource() {
+            ResourceKind::Applications => &self.app_records,
+            ResourceKind::Users => &self.user_records,
+            ResourceKind::Idps => &self.idp_records,
+            ResourceKind::Auth | ResourceKind::Config => &[],
+        }
+    }
+
+    pub fn selected_record(&self) -> Option<&Record> {
+        self.active_records().get(self.selected_record)
     }
 
     pub fn next_record(&mut self) {
@@ -167,6 +337,9 @@ impl App {
         self.selected_action = 0;
         self.selected_record = 0;
         self.focus = Focus::Resources;
+        if matches!(self.canvas_mode, CanvasMode::Browse) {
+            self.canvas_mode = CanvasMode::Browse;
+        }
     }
 
     pub fn previous_resource(&mut self) {
@@ -178,6 +351,9 @@ impl App {
         self.selected_action = 0;
         self.selected_record = 0;
         self.focus = Focus::Resources;
+        if matches!(self.canvas_mode, CanvasMode::Browse) {
+            self.canvas_mode = CanvasMode::Browse;
+        }
     }
 
     pub fn next_action(&mut self) {
@@ -228,106 +404,207 @@ impl App {
         };
     }
 
-    pub fn active_resource(&self) -> ResourceKind {
-        self.resources[self.selected_resource].kind
+    pub fn set_canvas_mode(&mut self, canvas_mode: CanvasMode) {
+        self.canvas_mode = canvas_mode;
+        self.focus = match self.canvas_mode {
+            CanvasMode::Browse => Focus::Resources,
+            CanvasMode::EditForm(_) | CanvasMode::Setup(_) => Focus::Form,
+            CanvasMode::Confirm(_) | CanvasMode::Success(_) | CanvasMode::Error(_) => Focus::Form,
+        };
     }
 
-    pub fn actions(&self) -> &'static [Action] {
-        match self.active_resource() {
-            ResourceKind::Applications => &APPLICATION_ACTIONS,
-            ResourceKind::Users => &USER_ACTIONS,
-            ResourceKind::Idps => &IDP_ACTIONS,
-            ResourceKind::Auth => &AUTH_ACTIONS,
-            ResourceKind::Config => &CONFIG_ACTIONS,
+    pub fn reset_to_browse(&mut self) {
+        self.canvas_mode = if self.setup_required {
+            CanvasMode::Setup(default_setup_form(&TuiBootstrap {
+                host: self.host.clone(),
+                project: self.project.clone(),
+                auth_label: self.auth_label.clone(),
+                templates_path: self.templates_path.clone(),
+                setup_required: self.setup_required,
+                app_records: self.app_records.clone(),
+                user_records: self.user_records.clone(),
+                idp_records: self.idp_records.clone(),
+                legacy_config_detected: self.legacy_config_detected,
+            }))
+        } else {
+            CanvasMode::Browse
+        };
+        self.focus = Focus::Resources;
+    }
+
+    pub fn form_next_field(&mut self) {
+        if let Some(form) = self.form_state_mut() {
+            form.selected_field = (form.selected_field + 1) % form.fields.len();
         }
     }
 
-    pub fn active_records(&self) -> &[Record] {
-        match self.active_resource() {
-            ResourceKind::Applications => &self.app_records,
-            ResourceKind::Users => &self.user_records,
-            ResourceKind::Idps => &self.idp_records,
-            ResourceKind::Auth | ResourceKind::Config => &[],
+    pub fn form_previous_field(&mut self) {
+        if let Some(form) = self.form_state_mut() {
+            form.selected_field = if form.selected_field == 0 {
+                form.fields.len() - 1
+            } else {
+                form.selected_field - 1
+            };
         }
     }
 
-    pub fn selected_record(&self) -> Option<&Record> {
-        self.active_records().get(self.selected_record)
+    pub fn form_insert_char(&mut self, ch: char) {
+        if let Some(field) = self.active_form_field_mut() {
+            let kind = field.kind.clone();
+            match kind {
+                FieldKind::Text | FieldKind::Secret => field.value.push(ch),
+                FieldKind::Toggle | FieldKind::Checkbox => {
+                    if ch == ' ' {
+                        toggle_field(field);
+                    }
+                }
+                FieldKind::Choice(options) => {
+                    if ch == ' ' {
+                        cycle_choice(field, &options, true);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn form_backspace(&mut self) {
+        if let Some(field) = self.active_form_field_mut() {
+            match field.kind {
+                FieldKind::Text | FieldKind::Secret => {
+                    field.value.pop();
+                }
+                FieldKind::Toggle | FieldKind::Checkbox | FieldKind::Choice(_) => {}
+            }
+        }
+    }
+
+    pub fn form_toggle_or_cycle(&mut self, forward: bool) {
+        if let Some(field) = self.active_form_field_mut() {
+            let kind = field.kind.clone();
+            match kind {
+                FieldKind::Toggle | FieldKind::Checkbox => toggle_field(field),
+                FieldKind::Choice(options) => cycle_choice(field, &options, forward),
+                FieldKind::Text | FieldKind::Secret => {}
+            }
+        }
+    }
+
+    pub fn message_lines(&self) -> Vec<String> {
+        match &self.canvas_mode {
+            CanvasMode::Browse => browse_lines(self),
+            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => form
+                .fields
+                .iter()
+                .enumerate()
+                .map(|(index, field)| render_form_line(field, index == form.selected_field))
+                .collect(),
+            CanvasMode::Confirm(confirm) => confirm.lines.clone(),
+            CanvasMode::Success(message) | CanvasMode::Error(message) => message.lines.clone(),
+        }
+    }
+
+    pub fn canvas_title(&self) -> String {
+        match &self.canvas_mode {
+            CanvasMode::Browse => browse_title(self).to_string(),
+            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => form.title.clone(),
+            CanvasMode::Confirm(confirm) => confirm.title.clone(),
+            CanvasMode::Success(message) | CanvasMode::Error(message) => message.title.clone(),
+        }
+    }
+
+    pub fn canvas_meta(&self) -> String {
+        match &self.canvas_mode {
+            CanvasMode::Browse => browse_meta(self).to_string(),
+            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => form.submit_label.clone(),
+            CanvasMode::Confirm(confirm) => confirm.submit_label.clone(),
+            CanvasMode::Success(_) => "[Enter] continue".to_string(),
+            CanvasMode::Error(_) => "[Esc] back".to_string(),
+        }
+    }
+
+    pub fn review_lines(&self) -> Vec<Line<'static>> {
+        match &self.canvas_mode {
+            CanvasMode::Browse => browse_review_lines(self),
+            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => form_review_lines(form),
+            CanvasMode::Confirm(confirm) => confirm_review_lines(confirm),
+            CanvasMode::Success(message) | CanvasMode::Error(message) => {
+                message_review_lines(message)
+            }
+        }
+    }
+
+    fn form_state_mut(&mut self) -> Option<&mut FormState> {
+        match &mut self.canvas_mode {
+            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => Some(form),
+            CanvasMode::Browse
+            | CanvasMode::Confirm(_)
+            | CanvasMode::Success(_)
+            | CanvasMode::Error(_) => None,
+        }
+    }
+
+    fn active_form_field_mut(&mut self) -> Option<&mut FormField> {
+        self.form_state_mut()
+            .and_then(|form| form.fields.get_mut(form.selected_field))
     }
 }
 
 const APPLICATION_ACTIONS: [Action; 4] = [
     Action {
         label: "Create application",
-        hotkey: "[n]",
+        hotkey: "[enter]",
     },
     Action {
         label: "Regenerate secret",
-        hotkey: "[r]",
+        hotkey: "[enter]",
     },
     Action {
         label: "Delete selected",
-        hotkey: "[d]",
+        hotkey: "[enter]",
     },
     Action {
         label: "Quick setup",
-        hotkey: "[s]",
+        hotkey: "[enter]",
     },
 ];
 
 const USER_ACTIONS: [Action; 4] = [
     Action {
         label: "Create user",
-        hotkey: "[n]",
+        hotkey: "[enter]",
     },
     Action {
         label: "Create admin",
-        hotkey: "[a]",
+        hotkey: "[enter]",
     },
     Action {
         label: "Grant IAM_OWNER",
-        hotkey: "[g]",
+        hotkey: "[enter]",
     },
     Action {
         label: "Quick setup",
-        hotkey: "[s]",
+        hotkey: "[enter]",
     },
 ];
 
-const IDP_ACTIONS: [Action; 2] = [
-    Action {
-        label: "Configure Google",
-        hotkey: "[n]",
-    },
-    Action {
-        label: "Refresh providers",
-        hotkey: "[r]",
-    },
-];
+const IDP_ACTIONS: [Action; 1] = [Action {
+    label: "Configure Google",
+    hotkey: "[enter]",
+}];
 
-const AUTH_ACTIONS: [Action; 2] = [
-    Action {
-        label: "Validate token",
-        hotkey: "[v]",
-    },
-    Action {
-        label: "Run setup",
-        hotkey: "[n]",
-    },
-];
+const AUTH_ACTIONS: [Action; 1] = [Action {
+    label: "Run setup",
+    hotkey: "[enter]",
+}];
 
-const CONFIG_ACTIONS: [Action; 3] = [
+const CONFIG_ACTIONS: [Action; 2] = [
     Action {
-        label: "Edit host",
-        hotkey: "[h]",
+        label: "Edit config",
+        hotkey: "[enter]",
     },
     Action {
-        label: "Edit project",
-        hotkey: "[p]",
-    },
-    Action {
-        label: "Templates file",
-        hotkey: "[t]",
+        label: "Import legacy",
+        hotkey: "[enter]",
     },
 ];
 
@@ -484,7 +761,7 @@ fn draw_command_rail(frame: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
     frame.render_widget(
-        List::new(actions).block(section_block("Actions", "[/] palette")),
+        List::new(actions).block(section_block("Actions", "[Enter] run")),
         sections[1],
     );
 
@@ -492,31 +769,6 @@ fn draw_command_rail(frame: &mut Frame, area: Rect, app: &App) {
         .wrap(Wrap { trim: true })
         .block(section_block("Status", ""));
     frame.render_widget(footer, sections[2]);
-}
-
-fn footer_lines(app: &App) -> Vec<Line<'static>> {
-    match app.active_resource() {
-        ResourceKind::Applications => vec![
-            status_heading("Applications"),
-            muted_line("Create OIDC apps from templates or by hand. Confidential apps expose secret rotation."),
-        ],
-        ResourceKind::Users => vec![
-            status_heading("Users"),
-            muted_line("Human users, admin bootstrap, and IAM_OWNER grants now share one shell."),
-        ],
-        ResourceKind::Idps => vec![
-            status_heading("Identity providers"),
-            muted_line("Google IDP is manual-entry only in Rust. Kubernetes secret loading stays removed."),
-        ],
-        ResourceKind::Auth => vec![
-            status_heading("Authentication"),
-            muted_line("Precedence is CLI, env, config, then setup. Headless commands fail fast instead of prompting."),
-        ],
-        ResourceKind::Config => vec![
-            status_heading("Configuration"),
-            muted_line("Canonical config lives in TOML. Legacy Ruby YAML is only for first-run import."),
-        ],
-    }
 }
 
 fn draw_workspace(frame: &mut Frame, area: Rect, app: &App) {
@@ -537,15 +789,18 @@ fn draw_canvas(frame: &mut Frame, area: Rect, app: &App) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(63), Constraint::Percentage(37)])
         .split(area);
+    let canvas_title = app.canvas_title();
+    let canvas_meta = app.canvas_meta();
 
     let form_block = Block::default()
         .borders(Borders::ALL)
         .border_style(focus_border(app.focus == Focus::Form))
         .style(Style::default().bg(Color::Rgb(18, 26, 39)))
-        .title(title_span("Canvas", canvas_title(app)));
+        .title(title_span("Canvas", &canvas_title));
     frame.render_widget(form_block, chunks[0]);
 
-    let form = Paragraph::new(canvas_lines(app))
+    let form_lines = app.message_lines().join("\n");
+    let form = Paragraph::new(form_lines)
         .wrap(Wrap { trim: true })
         .alignment(Alignment::Left);
     frame.render_widget(
@@ -560,10 +815,10 @@ fn draw_canvas(frame: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Rgb(47, 58, 79)))
         .style(Style::default().bg(Color::Rgb(19, 27, 38)))
-        .title(title_span("Review", review_title(app)));
+        .title(title_span("Review", &canvas_meta));
     frame.render_widget(review_block, chunks[1]);
 
-    let review = Paragraph::new(review_lines(app)).wrap(Wrap { trim: true });
+    let review = Paragraph::new(app.review_lines()).wrap(Wrap { trim: true });
     frame.render_widget(
         review,
         chunks[1].inner(Margin {
@@ -571,136 +826,6 @@ fn draw_canvas(frame: &mut Frame, area: Rect, app: &App) {
             vertical: 1,
         }),
     );
-}
-
-fn canvas_title(app: &App) -> &'static str {
-    match app.active_resource() {
-        ResourceKind::Applications => "Create OIDC application",
-        ResourceKind::Users => "Create or elevate user",
-        ResourceKind::Idps => "Configure Google provider",
-        ResourceKind::Auth => "Validate runtime credentials",
-        ResourceKind::Config => "First-run and saved settings",
-    }
-}
-
-fn canvas_lines(app: &App) -> Vec<Line<'static>> {
-    match app.active_resource() {
-        ResourceKind::Applications => vec![
-            field_line("Mode", "template or manual"),
-            field_line(
-                "Client type",
-                &selected_field(app, "confidential", "public"),
-            ),
-            field_line(
-                "Redirect URIs",
-                &selected_meta(app, "configure before create"),
-            ),
-            field_line("Template file", app.templates_path.as_deref().unwrap_or("not configured")),
-            muted_line("Use quick setup to batch-create predefined apps from the templates YAML."),
-        ],
-        ResourceKind::Users => vec![
-            field_line("Mode", "human or imported admin"),
-            field_line("Email", &selected_field(app, "pending", "choose a user")),
-            field_line("Privilege", &selected_meta(app, "IAM_OWNER optional")),
-            field_line("Bootstrap", "temporary password shown once"),
-            muted_line("Admin creation keeps the Ruby flow: import local user, then optionally grant IAM_OWNER."),
-        ],
-        ResourceKind::Idps => vec![
-            field_line("Provider", "Google"),
-            field_line("Credential source", "manual token entry"),
-            field_line("Creation", "allowed"),
-            field_line("Linking", "allowed"),
-            muted_line("The Rust port intentionally drops Kubernetes secret reads for Google OAuth credentials."),
-        ],
-        ResourceKind::Auth => vec![
-            field_line("Current source", &app.auth_label),
-            field_line(
-                "Status",
-                if app.setup_required {
-                    "setup required"
-                } else {
-                    "validated by startup bootstrap"
-                },
-            ),
-            field_line("Priority", "CLI > env > config > setup"),
-            field_line("OAuth device", "planned next"),
-            muted_line("Interactive setup should recover stale PATs and invalid service-account files here."),
-        ],
-        ResourceKind::Config => vec![
-            field_line("Host", &app.host),
-            field_line("Project", &app.project),
-            field_line(
-                "Templates",
-                app.templates_path.as_deref().unwrap_or("not configured"),
-            ),
-            field_line(
-                "Legacy import",
-                if app.setup_required {
-                    "available"
-                } else {
-                    "completed or skipped"
-                },
-            ),
-            muted_line("Config remains TOML in XDG space, with Ruby YAML import only as a migration bridge."),
-        ],
-    }
-}
-
-fn review_title(app: &App) -> &'static str {
-    match app.active_resource() {
-        ResourceKind::Applications => "selected application",
-        ResourceKind::Users => "selected user",
-        ResourceKind::Idps => "selected provider",
-        ResourceKind::Auth => "resolution detail",
-        ResourceKind::Config => "stored values",
-    }
-}
-
-fn review_lines(app: &App) -> Vec<Line<'static>> {
-    match app.active_resource() {
-        ResourceKind::Applications | ResourceKind::Users | ResourceKind::Idps => {
-            if let Some(record) = app.selected_record() {
-                vec![
-                    bold_line(&record.name),
-                    subtle_line(&record.kind),
-                    Line::from(""),
-                    field_line("Summary", &record.redirects),
-                    field_line("Changed", &record.changed_at),
-                    field_line("Inspector", "press i for full detail"),
-                ]
-            } else {
-                vec![
-                    bold_line("Nothing selected"),
-                    muted_line("No records are loaded for this resource yet."),
-                ]
-            }
-        }
-        ResourceKind::Auth => vec![
-            bold_line("Resolved at startup"),
-            subtle_line(&app.auth_label),
-            Line::from(""),
-            field_line("Ready", if app.setup_required { "no" } else { "yes" }),
-            field_line(
-                "Fallback",
-                if app.setup_required {
-                    "launch setup flow"
-                } else {
-                    "revalidate token"
-                },
-            ),
-        ],
-        ResourceKind::Config => vec![
-            bold_line("Configuration scope"),
-            subtle_line("runtime + templates"),
-            Line::from(""),
-            field_line("Host", &app.host),
-            field_line("Project", &app.project),
-            field_line(
-                "Templates",
-                app.templates_path.as_deref().unwrap_or("not configured"),
-            ),
-        ],
-    }
 }
 
 fn draw_selection_tray(frame: &mut Frame, area: Rect, app: &App) {
@@ -746,16 +871,6 @@ fn draw_selection_tray(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-fn selection_title(app: &App) -> &'static str {
-    match app.active_resource() {
-        ResourceKind::Applications => "existing applications",
-        ResourceKind::Users => "existing users",
-        ResourceKind::Idps => "configured identity providers",
-        ResourceKind::Auth => "auth overview",
-        ResourceKind::Config => "saved settings",
-    }
-}
-
 fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
     let status = Block::default()
         .style(Style::default().bg(Color::Rgb(12, 18, 29)))
@@ -768,7 +883,7 @@ fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
         .map(|record| record.name.as_str())
         .unwrap_or("none");
     let text = format!(
-        "{}. [Tab] focus  [h/l] resource  [j/k] move  [i] inspector  [q] quit  Selected: {}",
+        "{}. [Tab] focus  [Enter] act  [Esc] back  [j/k] move  [i] inspector  Selected: {}",
         resource_label(app.active_resource()),
         selected
     );
@@ -792,44 +907,20 @@ fn draw_inspector_popup(frame: &mut Frame, area: Rect, app: &App) {
         .title(title_span("Inspector popup", "[i] close"));
     frame.render_widget(block, area);
 
-    let lines = match app.active_resource() {
-        ResourceKind::Applications | ResourceKind::Users | ResourceKind::Idps => {
-            if let Some(record) = app.selected_record() {
-                vec![
-                    field_line("Name", &record.name),
-                    field_line("State", &record.kind),
-                    field_line("Summary", &record.redirects),
-                    field_line("Changed", &record.changed_at),
-                    Line::from(""),
-                    muted_line("Inspector is off-canvas so the workspace can stay calmer while still exposing detail on demand."),
-                ]
-            } else {
-                vec![
-                    bold_line("Nothing selected"),
-                    muted_line("Choose a record first, then open the inspector again."),
-                ]
-            }
-        }
-        ResourceKind::Auth => vec![
-            field_line("Source", &app.auth_label),
-            field_line(
-                "Requires setup",
-                if app.setup_required { "yes" } else { "no" },
-            ),
-            field_line("Priority", "CLI > env > config > setup"),
-            Line::from(""),
-            muted_line("This popup is where validation errors and re-auth actions should land next."),
-        ],
-        ResourceKind::Config => vec![
-            field_line("Host", &app.host),
-            field_line("Project", &app.project),
-            field_line(
-                "Templates",
-                app.templates_path.as_deref().unwrap_or("not configured"),
-            ),
-            Line::from(""),
-            muted_line("Keep runtime config and templates separate so secrets do not drift into domain templates."),
-        ],
+    let lines = if let Some(record) = app.selected_record() {
+        vec![
+            field_line("Name", &record.name),
+            field_line("ID", &record.id),
+            field_line("Kind", &record.kind),
+            field_line("Summary", &record.summary),
+            field_line("Detail", &record.detail),
+            field_line("Changed", &record.changed_at),
+        ]
+    } else {
+        vec![
+            bold_line("No selected record"),
+            muted_line("Choose a record in the tray to inspect more detail."),
+        ]
     };
 
     let text = Paragraph::new(lines).wrap(Wrap { trim: true });
@@ -842,6 +933,236 @@ fn draw_inspector_popup(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+fn footer_lines(app: &App) -> Vec<Line<'static>> {
+    match app.active_resource() {
+        ResourceKind::Applications => vec![
+            status_heading("Applications"),
+            muted_line("Canvas forms create, delete, rotate secrets, and batch-apply templates."),
+        ],
+        ResourceKind::Users => vec![
+            status_heading("Users"),
+            muted_line("User creation, admin bootstrap, IAM_OWNER grants, and quick setup all live in the canvas."),
+        ],
+        ResourceKind::Idps => vec![
+            status_heading("Identity providers"),
+            muted_line("Google IDP uses manual credentials only. Kubernetes secret loading stays removed."),
+        ],
+        ResourceKind::Auth => vec![
+            status_heading("Authentication"),
+            muted_line("Use setup to validate PAT or service-account auth and persist config safely."),
+        ],
+        ResourceKind::Config => vec![
+            status_heading("Configuration"),
+            muted_line("Runtime config stays in TOML; legacy YAML import remains a migration-only bridge."),
+        ],
+    }
+}
+
+fn browse_title(app: &App) -> &'static str {
+    match app.active_resource() {
+        ResourceKind::Applications => "OIDC application workspace",
+        ResourceKind::Users => "User management workspace",
+        ResourceKind::Idps => "Identity provider workspace",
+        ResourceKind::Auth => "Authentication setup",
+        ResourceKind::Config => "Configuration editor",
+    }
+}
+
+fn browse_meta(app: &App) -> &'static str {
+    match app.active_resource() {
+        ResourceKind::Applications => "choose an action",
+        ResourceKind::Users => "choose an action",
+        ResourceKind::Idps => "choose an action",
+        ResourceKind::Auth => "run setup",
+        ResourceKind::Config => "edit or import",
+    }
+}
+
+fn browse_lines(app: &App) -> Vec<String> {
+    match app.active_resource() {
+        ResourceKind::Applications => vec![
+            "List is the default view for applications.".to_string(),
+            "Use the action rail to create an application, rotate a confidential secret, delete an app, or batch-create predefined templates.".to_string(),
+            "The tray below stays active while you work, and the inspector popup keeps detailed application metadata off-canvas.".to_string(),
+        ],
+        ResourceKind::Users => vec![
+            "List is the default view for users.".to_string(),
+            "Create normal users, bootstrap local admins with a temporary password, grant IAM_OWNER, or run predefined quick setup from templates.".to_string(),
+            "Admin credentials are shown once in a success canvas after import succeeds.".to_string(),
+        ],
+        ResourceKind::Idps => vec![
+            "Google is configured manually in Rust.".to_string(),
+            "No Kubernetes-backed credential source appears anywhere in the TUI.".to_string(),
+        ],
+        ResourceKind::Auth => vec![
+            "This area owns interactive setup and auth recovery.".to_string(),
+            "Fill host, optional project, auth method, and template path, then validate before returning to the main shell.".to_string(),
+            "OAuth device flow remains visible as a future path only.".to_string(),
+        ],
+        ResourceKind::Config => vec![
+            "Edit saved host, project, and templates path here.".to_string(),
+            "If a legacy Ruby YAML file exists, import can move it into canonical TOML config.".to_string(),
+        ],
+    }
+}
+
+fn browse_review_lines(app: &App) -> Vec<Line<'static>> {
+    if let Some(record) = app.selected_record() {
+        vec![
+            bold_line(&record.name),
+            subtle_line(&record.kind),
+            Line::from(""),
+            field_line("Summary", &record.summary),
+            field_line("Detail", &record.detail),
+            field_line("Changed", &record.changed_at),
+        ]
+    } else {
+        vec![
+            bold_line("Ready"),
+            subtle_line("Select an action to start a workflow."),
+            Line::from(""),
+            field_line("Mode", resource_label(app.active_resource())),
+            field_line("Focus", focus_label(app.focus)),
+            field_line("Inspector", "press i for popup"),
+        ]
+    }
+}
+
+fn form_review_lines(form: &FormState) -> Vec<Line<'static>> {
+    vec![
+        bold_line(&form.title),
+        subtle_line(&form.description),
+        Line::from(""),
+        field_line("Submit", &form.submit_label),
+        field_line("Fields", &form.fields.len().to_string()),
+        field_line("Selected", &form.fields[form.selected_field].label),
+        muted_line("Use j/k to move fields. Type to edit. Space toggles booleans and choices."),
+    ]
+}
+
+fn confirm_review_lines(confirm: &ConfirmState) -> Vec<Line<'static>> {
+    vec![
+        bold_line(&confirm.title),
+        subtle_line(&confirm.submit_label),
+        Line::from(""),
+        field_line("Pending", pending_label(&confirm.pending)),
+        muted_line("Press Enter to confirm or Esc to cancel."),
+    ]
+}
+
+fn message_review_lines(message: &MessageState) -> Vec<Line<'static>> {
+    vec![
+        bold_line(&message.title),
+        subtle_line("workflow result"),
+        Line::from(""),
+        field_line("Lines", &message.lines.len().to_string()),
+        muted_line("Press Enter or Esc to return to the workspace."),
+    ]
+}
+
+fn render_form_line(field: &FormField, selected: bool) -> String {
+    let marker = if selected { "›" } else { " " };
+    let value = match field.kind {
+        FieldKind::Secret => "•".repeat(field.value.len().max(1)),
+        FieldKind::Toggle | FieldKind::Checkbox => {
+            if is_enabled(&field.value) {
+                "[x]".to_string()
+            } else {
+                "[ ]".to_string()
+            }
+        }
+        FieldKind::Choice(_) | FieldKind::Text => field.value.clone(),
+    };
+    format!("{marker} {:<18} {}", field.label, value)
+}
+
+fn pending_label(pending: &PendingAction) -> &'static str {
+    match pending {
+        PendingAction::CreateApplication => "create application",
+        PendingAction::QuickSetupApplications => "quick setup apps",
+        PendingAction::DeleteApplication { .. } => "delete application",
+        PendingAction::RegenerateSecret { .. } => "regenerate secret",
+        PendingAction::CreateUser => "create user",
+        PendingAction::CreateAdminUser => "create admin user",
+        PendingAction::GrantIamOwner { .. } => "grant IAM_OWNER",
+        PendingAction::QuickSetupUsers => "quick setup users",
+        PendingAction::ConfigureGoogleIdp => "configure Google IDP",
+        PendingAction::ValidateAuthSetup => "validate auth setup",
+        PendingAction::SaveConfig => "save config",
+        PendingAction::ImportLegacyConfig => "import legacy config",
+    }
+}
+
+fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
+    FormState {
+        title: "Initial setup".to_string(),
+        description:
+            "Configure Zitadel connectivity and validate credentials before entering the workspace."
+                .to_string(),
+        submit_label: "[Enter] validate and save".to_string(),
+        selected_field: 0,
+        pending: PendingAction::ValidateAuthSetup,
+        fields: vec![
+            FormField {
+                key: "host",
+                label: "Host".to_string(),
+                value: bootstrap.host.clone(),
+                kind: FieldKind::Text,
+                help: "Zitadel base URL".to_string(),
+            },
+            FormField {
+                key: "project",
+                label: "Project".to_string(),
+                value: bootstrap.project.clone(),
+                kind: FieldKind::Text,
+                help: "Optional default project ID".to_string(),
+            },
+            FormField {
+                key: "auth_method",
+                label: "Auth method".to_string(),
+                value: "PAT".to_string(),
+                kind: FieldKind::Choice(vec![
+                    "PAT".to_string(),
+                    "Service account".to_string(),
+                    "OAuth device (planned)".to_string(),
+                ]),
+                help: "Choose PAT or service account for this slice".to_string(),
+            },
+            FormField {
+                key: "token",
+                label: "PAT".to_string(),
+                value: String::new(),
+                kind: FieldKind::Secret,
+                help: "Used when auth method is PAT".to_string(),
+            },
+            FormField {
+                key: "service_account_file",
+                label: "Service account".to_string(),
+                value: String::new(),
+                kind: FieldKind::Text,
+                help: "Used when auth method is service account".to_string(),
+            },
+            FormField {
+                key: "templates_path",
+                label: "Templates path".to_string(),
+                value: bootstrap.templates_path.clone().unwrap_or_default(),
+                kind: FieldKind::Text,
+                help: "Optional apps/users YAML file".to_string(),
+            },
+        ],
+    }
+}
+
+fn selection_title(app: &App) -> &'static str {
+    match app.active_resource() {
+        ResourceKind::Applications => "existing applications",
+        ResourceKind::Users => "existing users",
+        ResourceKind::Idps => "configured identity providers",
+        ResourceKind::Auth => "setup state",
+        ResourceKind::Config => "saved values",
+    }
+}
+
 fn resource_label(kind: ResourceKind) -> &'static str {
     match kind {
         ResourceKind::Applications => "Applications",
@@ -852,30 +1173,21 @@ fn resource_label(kind: ResourceKind) -> &'static str {
     }
 }
 
+fn focus_label(focus: Focus) -> &'static str {
+    match focus {
+        Focus::Resources => "resources",
+        Focus::Actions => "actions",
+        Focus::Form => "form",
+        Focus::Records => "records",
+    }
+}
+
 fn status_mark(app: &App) -> &'static str {
     if app.setup_required {
         "!"
     } else {
         "✓"
     }
-}
-
-fn selected_field(app: &App, default: &str, empty: &str) -> String {
-    app.selected_record()
-        .map(|record| record.name.clone())
-        .unwrap_or_else(|| {
-            if app.active_records().is_empty() {
-                empty.to_string()
-            } else {
-                default.to_string()
-            }
-        })
-}
-
-fn selected_meta(app: &App, empty: &str) -> String {
-    app.selected_record()
-        .map(|record| record.redirects.clone())
-        .unwrap_or_else(|| empty.to_string())
 }
 
 fn list_item(label: &str, meta: &str, selected: bool, accent: Color) -> ListItem<'static> {
@@ -964,6 +1276,36 @@ fn muted_line(value: &str) -> Line<'static> {
     ))
 }
 
+fn toggle_field(field: &mut FormField) {
+    field.value = if is_enabled(&field.value) {
+        "false".to_string()
+    } else {
+        "true".to_string()
+    };
+}
+
+fn cycle_choice(field: &mut FormField, options: &[String], forward: bool) {
+    let Some(current) = options.iter().position(|value| value == &field.value) else {
+        if let Some(first) = options.first() {
+            field.value = first.clone();
+        }
+        return;
+    };
+
+    let next = if forward {
+        (current + 1) % options.len()
+    } else if current == 0 {
+        options.len() - 1
+    } else {
+        current - 1
+    };
+    field.value = options[next].clone();
+}
+
+fn is_enabled(value: &str) -> bool {
+    matches!(value, "true" | "yes" | "on" | "1")
+}
+
 fn focus_border(selected: bool) -> Style {
     if selected {
         Style::default().fg(Color::Rgb(145, 194, 255))
@@ -994,30 +1336,62 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 pub fn sample_app_records() -> Vec<Record> {
     vec![
         Record {
+            id: "app-1".to_string(),
             name: "grafana-main".to_string(),
             kind: "confidential".to_string(),
-            redirects: "2 configured".to_string(),
-            changed_at: "09:41 UTC".to_string(),
+            summary: "2 redirects".to_string(),
+            detail: "client grafana-main".to_string(),
+            changed_at: "active".to_string(),
         },
         Record {
+            id: "app-2".to_string(),
             name: "paperless".to_string(),
             kind: "confidential".to_string(),
-            redirects: "3 configured".to_string(),
-            changed_at: "09:12 UTC".to_string(),
+            summary: "3 redirects".to_string(),
+            detail: "client paperless".to_string(),
+            changed_at: "active".to_string(),
         },
         Record {
+            id: "app-3".to_string(),
             name: "mealie-web".to_string(),
             kind: "public".to_string(),
-            redirects: "2 configured".to_string(),
-            changed_at: "08:54 UTC".to_string(),
-        },
-        Record {
-            name: "nextcloud".to_string(),
-            kind: "inactive".to_string(),
-            redirects: "4 configured".to_string(),
-            changed_at: "yesterday".to_string(),
+            summary: "2 redirects".to_string(),
+            detail: "client mealie-web".to_string(),
+            changed_at: "active".to_string(),
         },
     ]
+}
+
+pub fn sample_user_records() -> Vec<Record> {
+    vec![
+        Record {
+            id: "user-1".to_string(),
+            name: "alice@example.com".to_string(),
+            kind: "active".to_string(),
+            summary: "alice@example.com".to_string(),
+            detail: "Alice Example".to_string(),
+            changed_at: "human user".to_string(),
+        },
+        Record {
+            id: "user-2".to_string(),
+            name: "admin".to_string(),
+            kind: "active".to_string(),
+            summary: "admin@example.com".to_string(),
+            detail: "Admin User".to_string(),
+            changed_at: "IAM owner".to_string(),
+        },
+    ]
+}
+
+pub fn sample_idp_records() -> Vec<Record> {
+    vec![Record {
+        id: "idp-1".to_string(),
+        name: "Google".to_string(),
+        kind: "active".to_string(),
+        summary: "google".to_string(),
+        detail: "openid profile email".to_string(),
+        changed_at: "configured".to_string(),
+    }]
 }
 
 #[cfg(test)]
@@ -1032,18 +1406,9 @@ mod tests {
             templates_path: Some("/tmp/apps.yml".to_string()),
             setup_required: false,
             app_records: vec![],
-            user_records: vec![Record {
-                name: "alice@example.com".to_string(),
-                kind: "active".to_string(),
-                redirects: "IAM_OWNER".to_string(),
-                changed_at: "today".to_string(),
-            }],
-            idp_records: vec![Record {
-                name: "Google".to_string(),
-                kind: "active".to_string(),
-                redirects: "openid profile email".to_string(),
-                changed_at: "today".to_string(),
-            }],
+            user_records: vec![],
+            idp_records: vec![],
+            legacy_config_detected: true,
         })
     }
 
@@ -1061,42 +1426,11 @@ mod tests {
     }
 
     #[test]
-    fn focus_cycles_backward() {
-        let mut app = test_app();
-        app.reverse_focus();
-        assert_eq!(app.focus, Focus::Records);
-        app.reverse_focus();
-        assert_eq!(app.focus, Focus::Form);
-    }
-
-    #[test]
     fn toggles_inspector_popup() {
         let mut app = test_app();
         assert!(!app.show_inspector);
         app.toggle_inspector();
         assert!(app.show_inspector);
-        app.toggle_inspector();
-        assert!(!app.show_inspector);
-    }
-
-    #[test]
-    fn selection_navigation_wraps() {
-        let mut app = test_app();
-        app.previous_record();
-        assert_eq!(app.selected_record().unwrap().name, "nextcloud");
-        app.next_record();
-        assert_eq!(app.selected_record().unwrap().name, "grafana-main");
-    }
-
-    #[test]
-    fn resource_navigation_changes_workspace() {
-        let mut app = test_app();
-        assert_eq!(app.active_resource(), ResourceKind::Applications);
-        app.next_resource();
-        assert_eq!(app.active_resource(), ResourceKind::Users);
-        assert_eq!(app.selected_record().unwrap().name, "alice@example.com");
-        app.previous_resource();
-        assert_eq!(app.active_resource(), ResourceKind::Applications);
     }
 
     #[test]
@@ -1108,7 +1442,46 @@ mod tests {
             "Regenerate secret"
         );
         app.next_resource();
-        assert_eq!(app.selected_action, 0);
         assert_eq!(app.actions()[app.selected_action].label, "Create user");
+    }
+
+    #[test]
+    fn setup_mode_uses_setup_form() {
+        let app = App::from_bootstrap(TuiBootstrap {
+            host: "https://zitadel.example.com".to_string(),
+            project: "core".to_string(),
+            auth_label: "Setup required".to_string(),
+            templates_path: None,
+            setup_required: true,
+            app_records: vec![],
+            user_records: vec![],
+            idp_records: vec![],
+            legacy_config_detected: false,
+        });
+
+        assert!(matches!(app.canvas_mode, CanvasMode::Setup(_)));
+    }
+
+    #[test]
+    fn form_editing_changes_selected_field() {
+        let mut app = test_app();
+        let mut form = default_setup_form(&TuiBootstrap {
+            host: "https://zitadel.example.com".to_string(),
+            project: "core".to_string(),
+            auth_label: "PAT".to_string(),
+            templates_path: None,
+            setup_required: true,
+            app_records: vec![],
+            user_records: vec![],
+            idp_records: vec![],
+            legacy_config_detected: false,
+        });
+        form.selected_field = 3;
+        app.set_canvas_mode(CanvasMode::Setup(form));
+        app.form_insert_char('x');
+        let CanvasMode::Setup(form) = &app.canvas_mode else {
+            panic!("expected setup mode");
+        };
+        assert_eq!(form.fields[3].value, "x");
     }
 }

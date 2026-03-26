@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(version, about = "A terminal UI for managing Zitadel resources")]
 pub struct Cli {
     #[arg(long, env = "ZITADEL_URL")]
@@ -30,7 +30,7 @@ pub struct Cli {
     pub command: Option<Command>,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     Apps(AppsCommand),
     Users(UsersCommand),
@@ -39,7 +39,7 @@ pub enum Command {
     Config(ConfigCommand),
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum AppsAction {
     List,
     Create(CreateAppArgs),
@@ -48,13 +48,13 @@ pub enum AppsAction {
     QuickSetup(QuickSetupAppsArgs),
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct AppsCommand {
     #[command(subcommand)]
     pub action: AppsAction,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum UsersAction {
     List,
     Create(CreateUserArgs),
@@ -63,48 +63,48 @@ pub enum UsersAction {
     QuickSetup,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct UsersCommand {
     #[command(subcommand)]
     pub action: UsersAction,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum IdpsAction {
     List,
     ConfigureGoogle(ConfigureGoogleArgs),
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct IdpsCommand {
     #[command(subcommand)]
     pub action: IdpsAction,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum AuthAction {
     Validate,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct AuthCommand {
     #[command(subcommand)]
     pub action: AuthAction,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum ConfigAction {
     Show,
     ImportLegacy,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct ConfigCommand {
     #[command(subcommand)]
     pub action: ConfigAction,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct CreateAppArgs {
     #[arg(long)]
     pub name: Option<String>,
@@ -116,13 +116,13 @@ pub struct CreateAppArgs {
     pub template: Option<String>,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct DeleteAppArgs {
     #[arg(long)]
     pub app_id: String,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct RegenerateSecretArgs {
     #[arg(long)]
     pub app_id: String,
@@ -130,13 +130,13 @@ pub struct RegenerateSecretArgs {
     pub client_id: Option<String>,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct QuickSetupAppsArgs {
     #[arg(long, value_delimiter = ',')]
     pub names: Vec<String>,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct CreateUserArgs {
     #[arg(long)]
     pub email: String,
@@ -148,7 +148,7 @@ pub struct CreateUserArgs {
     pub username: Option<String>,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct CreateAdminArgs {
     #[arg(long)]
     pub username: String,
@@ -162,13 +162,13 @@ pub struct CreateAdminArgs {
     pub password: Option<String>,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct GrantUserArgs {
     #[arg(long)]
     pub user_id: String,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct ConfigureGoogleArgs {
     #[arg(long)]
     pub client_id: String,

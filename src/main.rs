@@ -1,6 +1,7 @@
 mod auth;
 mod cli;
 mod client;
+mod conductor;
 mod config;
 mod tui;
 
@@ -14,6 +15,7 @@ use cli::{
     ConfigCommand, IdpsAction, IdpsCommand, UsersAction, UsersCommand,
 };
 use client::ZitadelClient;
+use conductor::TuiConductor;
 use config::AppConfig;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -23,7 +25,7 @@ use crossterm::{
 use ratatui::backend::CrosstermBackend;
 use serde::Serialize;
 use serde_json::Value;
-use tui::{draw, App, Focus, Record, TuiBootstrap};
+use tui::{draw, App, CanvasMode, Focus};
 
 #[derive(Debug, Serialize)]
 struct CommandEnvelope<T: Serialize> {
@@ -72,8 +74,8 @@ async fn main() -> Result<()> {
         }
     }
 
-    let bootstrap = bootstrap_tui_state(&args, &config).await;
-    run_tui(bootstrap)
+    let conductor = TuiConductor::bootstrap(args.clone(), config).await;
+    run_tui(conductor).await
 }
 
 fn validate_cli(args: &Cli) -> Result<()> {
@@ -353,141 +355,22 @@ async fn resolved_project_id(
         .context("failed to determine default project id")
 }
 
-async fn bootstrap_tui_state(args: &Cli, config: &AppConfig) -> TuiBootstrap {
-    let host = args
-        .host
-        .clone()
-        .or_else(|| config.zitadel_url.clone())
-        .unwrap_or_else(|| "https://zitadel.example.com".to_string());
-    let project = args
-        .project_id
-        .clone()
-        .or_else(|| config.project_id.clone())
-        .unwrap_or_else(|| "default".to_string());
-    let mut bootstrap = TuiBootstrap {
-        host: host.clone(),
-        project,
-        auth_label: if config.pat.is_some() {
-            "PAT".to_string()
-        } else if config.service_account_file.is_some() {
-            "Service account".to_string()
-        } else {
-            "Setup required".to_string()
-        },
-        templates_path: config
-            .apps_config_file
-            .as_ref()
-            .map(|path| path.display().to_string()),
-        setup_required: config.zitadel_url.is_none()
-            || (config.pat.is_none() && config.service_account_file.is_none()),
-        app_records: Vec::new(),
-        user_records: Vec::new(),
-        idp_records: Vec::new(),
-    };
-
-    if let Ok(auth) = resolve_access_token(
-        &reqwest::Client::new(),
-        &host,
-        args.token.clone(),
-        args.service_account_file.clone(),
-        config,
-    )
-    .await
-    {
-        bootstrap.auth_label = auth.source.to_string();
-        bootstrap.setup_required = false;
-    }
-
-    if let Ok(client) = authenticated_client(args, config).await {
-        if let Ok(project_id) = resolved_project_id(&client, args, config).await {
-            bootstrap.project = project_id.clone();
-            if let Ok(apps) = client.list_apps(&project_id).await {
-                bootstrap.app_records = apps
-                    .into_iter()
-                    .map(|app| Record {
-                        name: string_field(&app, "name", "unnamed"),
-                        kind: app
-                            .get("oidcConfig")
-                            .and_then(|oidc| oidc.get("authMethodType"))
-                            .and_then(|value| value.as_str())
-                            .map(|value| {
-                                if value == "OIDC_AUTH_METHOD_TYPE_NONE" {
-                                    "public".to_string()
-                                } else {
-                                    "confidential".to_string()
-                                }
-                            })
-                            .unwrap_or_else(|| string_field(&app, "state", "unknown")),
-                        redirects: format!(
-                            "{} configured",
-                            app.get("oidcConfig")
-                                .and_then(|oidc| oidc.get("redirectUris"))
-                                .and_then(|value| value.as_array())
-                                .map(|uris| uris.len())
-                                .unwrap_or(0)
-                        ),
-                        changed_at: string_field(&app, "state", "loaded"),
-                    })
-                    .collect::<Vec<_>>();
-            }
-
-            if let Ok(users) = client.list_users(100).await {
-                bootstrap.user_records = users
-                    .into_iter()
-                    .map(|user| Record {
-                        name: string_field(&user, "userName", "unknown-user"),
-                        kind: string_field(&user, "state", "unknown"),
-                        redirects: user
-                            .get("human")
-                            .and_then(|human| human.get("email"))
-                            .and_then(|email| email.get("email"))
-                            .and_then(|email| email.as_str())
-                            .unwrap_or("no email")
-                            .to_string(),
-                        changed_at: user
-                            .get("human")
-                            .and_then(|human| human.get("profile"))
-                            .and_then(|profile| profile.get("displayName"))
-                            .and_then(|display_name| display_name.as_str())
-                            .unwrap_or("human user")
-                            .to_string(),
-                    })
-                    .collect::<Vec<_>>();
-            }
-
-            if let Ok(idps) = client.list_idps().await {
-                bootstrap.idp_records = idps
-                    .into_iter()
-                    .map(|idp| Record {
-                        name: string_field(&idp, "name", "unnamed-idp"),
-                        kind: string_field(&idp, "state", "unknown"),
-                        redirects: string_field(&idp, "type", "provider"),
-                        changed_at: string_field(&idp, "id", "configured"),
-                    })
-                    .collect::<Vec<_>>();
-            }
-        }
-    }
-
-    bootstrap
-}
-
-fn run_tui(bootstrap: TuiBootstrap) -> Result<()> {
+async fn run_tui(mut conductor: TuiConductor) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let terminal = ratatui::Terminal::new(CrosstermBackend::new(stdout))?;
-    let result = run_app(terminal, bootstrap);
+    let result = run_app(terminal, &mut conductor).await;
     disable_raw_mode()?;
     execute!(io::stdout(), LeaveAlternateScreen)?;
     result
 }
 
-fn run_app(
+async fn run_app(
     mut terminal: ratatui::Terminal<CrosstermBackend<io::Stdout>>,
-    bootstrap: TuiBootstrap,
+    conductor: &mut TuiConductor,
 ) -> Result<()> {
-    let mut app = App::from_bootstrap(bootstrap);
+    let mut app = App::from_bootstrap(conductor.bootstrap_state());
 
     loop {
         terminal.draw(|frame| draw(frame, &app))?;
@@ -506,18 +389,71 @@ fn run_app(
                 KeyCode::Char('j') | KeyCode::Down => match app.focus {
                     Focus::Resources => app.next_resource(),
                     Focus::Actions => app.next_action(),
-                    Focus::Form | Focus::Records => app.next_record(),
+                    Focus::Form => app.form_next_field(),
+                    Focus::Records => app.next_record(),
                 },
                 KeyCode::Char('k') | KeyCode::Up => match app.focus {
                     Focus::Resources => app.previous_resource(),
                     Focus::Actions => app.previous_action(),
-                    Focus::Form | Focus::Records => app.previous_record(),
+                    Focus::Form => app.form_previous_field(),
+                    Focus::Records => app.previous_record(),
                 },
-                KeyCode::Char('h') | KeyCode::Left => app.previous_resource(),
-                KeyCode::Char('l') | KeyCode::Right => app.next_resource(),
+                KeyCode::Char('h') | KeyCode::Left => {
+                    if app.focus == Focus::Form {
+                        app.form_toggle_or_cycle(false);
+                    } else {
+                        app.previous_resource();
+                    }
+                }
+                KeyCode::Char('l') | KeyCode::Right => {
+                    if app.focus == Focus::Form {
+                        app.form_toggle_or_cycle(true);
+                    } else {
+                        app.next_resource();
+                    }
+                }
                 KeyCode::Char('i') => app.toggle_inspector(),
                 KeyCode::Char('n') => app.focus = Focus::Actions,
                 KeyCode::Char('g') => app.focus = Focus::Resources,
+                KeyCode::Enter => match &app.canvas_mode {
+                    CanvasMode::Browse => {
+                        let mode = conductor.begin_action(
+                            app.active_resource(),
+                            app.selected_action,
+                            app.selected_record(),
+                        );
+                        app.set_canvas_mode(mode);
+                    }
+                    CanvasMode::EditForm(form) | CanvasMode::Setup(form) => {
+                        let next = conductor.submit_form(form).await;
+                        app.set_canvas_mode(next);
+                        app.sync_runtime(conductor.bootstrap_state());
+                    }
+                    CanvasMode::Confirm(confirm) => {
+                        let next = conductor.confirm(confirm.pending.clone()).await;
+                        app.set_canvas_mode(next);
+                        app.sync_runtime(conductor.bootstrap_state());
+                    }
+                    CanvasMode::Success(_) | CanvasMode::Error(_) => app.reset_to_browse(),
+                },
+                KeyCode::Esc => match app.canvas_mode {
+                    CanvasMode::Browse => {}
+                    CanvasMode::EditForm(_) | CanvasMode::Setup(_) | CanvasMode::Confirm(_) => {
+                        app.reset_to_browse()
+                    }
+                    CanvasMode::Success(_) | CanvasMode::Error(_) => app.reset_to_browse(),
+                },
+                KeyCode::Backspace => {
+                    if app.focus == Focus::Form {
+                        app.form_backspace();
+                    }
+                }
+                KeyCode::Char(' ') => {
+                    if app.focus == Focus::Form {
+                        app.form_toggle_or_cycle(true);
+                    }
+                }
+                KeyCode::Char(ch) if app.focus == Focus::Form => app.form_insert_char(ch),
                 KeyCode::Tab => app.advance_focus(),
                 KeyCode::BackTab => app.reverse_focus(),
                 _ => {}
@@ -552,14 +488,6 @@ fn print_human(command: &Command, result: &Value) {
             );
         }
     }
-}
-
-fn string_field(value: &Value, key: &str, fallback: &str) -> String {
-    value
-        .get(key)
-        .and_then(|field| field.as_str())
-        .unwrap_or(fallback)
-        .to_string()
 }
 
 #[cfg(test)]
