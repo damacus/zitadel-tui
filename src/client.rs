@@ -232,16 +232,16 @@ impl ZitadelClient {
 
         let response = request.send().await?;
         let status = response.status();
-        let text = response.text().await?;
+        let bytes = response.bytes().await?;
         if !status.is_success() {
-            bail!("API request failed ({}): {}", status, text);
+            bail!("API request failed ({status})");
         }
 
-        if text.trim().is_empty() {
+        if bytes.is_empty() {
             return Ok(json!({}));
         }
 
-        serde_json::from_str(&text).context("failed to decode Zitadel response")
+        serde_json::from_slice(&bytes).context("failed to decode Zitadel response")
     }
 }
 
@@ -319,7 +319,7 @@ mod tests {
             .mock("POST", "/admin/v1/idps/_search")
             .with_status(403)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"message":"forbidden"}"#)
+            .with_body(r#"{"message":"forbidden","client_secret":"leaked"}"#)
             .create_async()
             .await;
 
@@ -328,6 +328,66 @@ mod tests {
 
         mock.assert_async().await;
         assert!(error.contains("403"));
-        assert!(error.contains("forbidden"));
+        assert!(!error.contains("forbidden"));
+        assert!(!error.contains("leaked"));
+    }
+
+    #[tokio::test]
+    async fn empty_2xx_body_is_treated_as_success() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("DELETE", "/management/v1/projects/project-1/apps/app-1")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(204)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let response = client.delete_app("project-1", "app-1").await.unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(response, json!({}));
+    }
+
+    #[tokio::test]
+    async fn malformed_json_is_reported_without_echoing_input() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/management/v1/users/_search")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result": [}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let error = client.list_users(100).await.unwrap_err().to_string();
+
+        mock.assert_async().await;
+        assert!(error.contains("failed to decode Zitadel response"));
+        assert!(!error.contains("result"));
+    }
+
+    #[tokio::test]
+    async fn grant_iam_owner_sends_expected_payload() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/admin/v1/members")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::PartialJson(json!({
+                "userId": "user-1",
+                "roles": ["IAM_OWNER"]
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"memberId":"member-1"}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let response = client.grant_iam_owner("user-1").await.unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(response["memberId"], "member-1");
     }
 }
