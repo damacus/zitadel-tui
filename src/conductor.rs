@@ -23,7 +23,6 @@ pub struct TuiConductor {
     project: String,
     auth_label: String,
     setup_required: bool,
-    legacy_config_detected: bool,
     client: Option<ZitadelClient>,
     app_records: Vec<Record>,
     user_records: Vec<Record>,
@@ -46,7 +45,6 @@ impl TuiConductor {
             project: String::new(),
             auth_label: "Setup required".to_string(),
             setup_required: true,
-            legacy_config_detected: detect_legacy_config(),
             client: None,
             app_records: vec![],
             user_records: vec![],
@@ -70,7 +68,6 @@ impl TuiConductor {
             app_records: self.app_records.clone(),
             user_records: self.user_records.clone(),
             idp_records: self.idp_records.clone(),
-            legacy_config_detected: self.legacy_config_detected,
         }
     }
 
@@ -360,7 +357,7 @@ impl TuiConductor {
                         vec![
                             "PAT".to_string(),
                             "Service account".to_string(),
-                            "OAuth device (planned)".to_string(),
+                            "OAuth device (placeholder)".to_string(),
                         ],
                         "PAT and service account are live in this slice.",
                     ),
@@ -417,25 +414,6 @@ impl TuiConductor {
                         ),
                     ],
                 }),
-                1 => {
-                    if self.legacy_config_detected {
-                        CanvasMode::Confirm(ConfirmState {
-                            title: "Import legacy config".to_string(),
-                            lines: vec![
-                                "A legacy Ruby YAML config file was detected.".to_string(),
-                                "Importing will translate it into canonical TOML config."
-                                    .to_string(),
-                            ],
-                            submit_label: "[Enter] import legacy config".to_string(),
-                            pending: PendingAction::ImportLegacyConfig,
-                        })
-                    } else {
-                        error_mode(
-                            "No legacy config found",
-                            "No ~/.zitadel-tui.yml or zitadel-tui.yml was detected.",
-                        )
-                    }
-                }
                 _ => CanvasMode::Browse,
             },
         }
@@ -453,8 +431,7 @@ impl TuiConductor {
             PendingAction::SaveConfig => self.save_config_form(form).await,
             PendingAction::DeleteApplication { .. }
             | PendingAction::RegenerateSecret { .. }
-            | PendingAction::GrantIamOwner { .. }
-            | PendingAction::ImportLegacyConfig => error_mode(
+            | PendingAction::GrantIamOwner { .. } => error_mode(
                 "Invalid form state",
                 "This action requires confirmation instead.",
             ),
@@ -523,37 +500,6 @@ impl TuiConductor {
                 }
                 None => error_mode("Authentication required", "Run setup first."),
             },
-            PendingAction::ImportLegacyConfig => {
-                let Some(path) = legacy_config_path() else {
-                    return error_mode(
-                        "No legacy config found",
-                        "Could not locate a legacy config file.",
-                    );
-                };
-                match AppConfig::import_legacy(&path).and_then(|config| {
-                    config.save_to_canonical_path()?;
-                    Ok(config)
-                }) {
-                    Ok(config) => {
-                        self.config = config;
-                        self.templates = self.config.templates().unwrap_or_default();
-                        self.host = self
-                            .config
-                            .zitadel_url
-                            .clone()
-                            .unwrap_or_else(|| self.host.clone());
-                        self.refresh_runtime().await;
-                        CanvasMode::Success(MessageState {
-                            title: "Legacy config imported".to_string(),
-                            lines: vec![
-                                format!("Imported {}", path.display()),
-                                "Canonical TOML config has been updated.".to_string(),
-                            ],
-                        })
-                    }
-                    Err(error) => error_mode("Legacy import failed", &error.to_string()),
-                }
-            }
             PendingAction::CreateApplication
             | PendingAction::QuickSetupApplications
             | PendingAction::CreateUser
@@ -874,7 +820,7 @@ impl TuiConductor {
             return error_mode("Missing host", "Host is required.");
         }
         let auth_method = form_value(form, "auth_method");
-        if auth_method == "OAuth device (planned)" {
+        if auth_method == "OAuth device (placeholder)" {
             return error_mode(
                 "OAuth device flow not implemented",
                 "Use PAT or service account in this migration slice.",
@@ -1159,23 +1105,6 @@ fn string_field(value: &Value, key: &str, fallback: &str) -> String {
         .to_string()
 }
 
-fn detect_legacy_config() -> bool {
-    legacy_config_path().is_some()
-}
-
-fn legacy_config_path() -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd.join(".zitadel-tui.yml"));
-        candidates.push(cwd.join("zitadel-tui.yml"));
-    }
-    if let Some(home) = dirs::home_dir() {
-        candidates.push(home.join(".zitadel-tui.yml"));
-        candidates.push(home.join("zitadel-tui.yml"));
-    }
-    candidates.into_iter().find(|path| path.exists())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1189,7 +1118,7 @@ mod tests {
     }
 
     #[test]
-    fn begin_config_import_errors_without_legacy_file() {
+    fn begin_config_unknown_action_browses() {
         let conductor = TuiConductor {
             cli: Cli {
                 host: None,
@@ -1207,7 +1136,6 @@ mod tests {
             project: "default".to_string(),
             auth_label: "PAT".to_string(),
             setup_required: false,
-            legacy_config_detected: false,
             client: None,
             app_records: vec![],
             user_records: vec![],
@@ -1215,6 +1143,6 @@ mod tests {
         };
 
         let mode = conductor.begin_action(ResourceKind::Config, 1, None);
-        assert!(matches!(mode, CanvasMode::Error(_)));
+        assert!(matches!(mode, CanvasMode::Browse));
     }
 }

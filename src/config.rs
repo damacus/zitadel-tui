@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -57,15 +53,6 @@ pub struct UserTemplate {
     pub admin: bool,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
-struct LegacyConfig {
-    zitadel_url: Option<String>,
-    project_id: Option<String>,
-    apps_config_file: Option<PathBuf>,
-    sa_key_file: Option<PathBuf>,
-}
-
 impl AppConfig {
     pub fn load() -> Result<Self> {
         for path in config_paths() {
@@ -76,10 +63,6 @@ impl AppConfig {
                     .with_context(|| format!("failed to parse config {}", path.display()))?;
                 return Ok(config);
             }
-        }
-
-        if let Some(legacy) = legacy_config_paths().into_iter().find(|path| path.exists()) {
-            return Self::import_legacy(&legacy);
         }
 
         Ok(Self::default())
@@ -99,21 +82,6 @@ impl AppConfig {
         dirs::config_dir()
             .map(|dir| dir.join("zitadel-tui").join("config.toml"))
             .context("could not determine config directory")
-    }
-
-    pub fn import_legacy(path: &Path) -> Result<Self> {
-        let contents = fs::read_to_string(path)
-            .with_context(|| format!("failed to read legacy config {}", path.display()))?;
-        let legacy: LegacyConfig = serde_yaml::from_str(&contents)
-            .with_context(|| format!("failed to parse legacy config {}", path.display()))?;
-        Ok(Self {
-            zitadel_url: legacy.zitadel_url,
-            project_id: legacy.project_id,
-            apps_config_file: legacy.apps_config_file,
-            pat: None,
-            service_account_file: legacy.sa_key_file,
-            oauth_refresh_token: None,
-        })
     }
 
     pub fn templates(&self) -> Result<TemplatesFile> {
@@ -152,40 +120,10 @@ fn config_paths() -> Vec<PathBuf> {
     paths
 }
 
-fn legacy_config_paths() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    if let Ok(cwd) = std::env::current_dir() {
-        paths.push(cwd.join(".zitadel-tui.yml"));
-        paths.push(cwd.join("zitadel-tui.yml"));
-    }
-
-    if let Some(home) = dirs::home_dir() {
-        paths.push(home.join(".zitadel-tui.yml"));
-        paths.push(home.join("zitadel-tui.yml"));
-    }
-
-    paths
-}
-
-#[cfg(test)]
-impl AppConfig {
-    fn import_legacy_from_str(yaml: &str) -> Result<Self> {
-        let legacy: LegacyConfig = serde_yaml::from_str(yaml)?;
-        Ok(Self {
-            zitadel_url: legacy.zitadel_url,
-            project_id: legacy.project_id,
-            apps_config_file: legacy.apps_config_file,
-            pat: None,
-            service_account_file: legacy.sa_key_file,
-            oauth_refresh_token: None,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn defaults_are_empty_and_safe() {
@@ -229,34 +167,6 @@ mod tests {
     #[test]
     fn invalid_toml_is_rejected() {
         assert!(AppConfig::load_from_str("zitadel_url = [").is_err());
-    }
-
-    #[test]
-    fn legacy_yaml_import_ignores_kubernetes_only_fields() {
-        let imported = AppConfig::import_legacy_from_str(
-            r#"
-zitadel_url: https://zitadel.example.com
-project_id: "456"
-apps_config_file: /tmp/apps.yml
-sa_key_file: /tmp/zitadel-sa.json
-"#,
-        )
-        .unwrap();
-
-        assert_eq!(
-            imported.zitadel_url.as_deref(),
-            Some("https://zitadel.example.com")
-        );
-        assert_eq!(imported.project_id.as_deref(), Some("456"));
-        assert_eq!(
-            imported.apps_config_file.as_deref(),
-            Some(Path::new("/tmp/apps.yml"))
-        );
-        assert_eq!(
-            imported.service_account_file.as_deref(),
-            Some(Path::new("/tmp/zitadel-sa.json"))
-        );
-        assert!(imported.pat.is_none());
     }
 
     #[test]

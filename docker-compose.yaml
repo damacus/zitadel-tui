@@ -8,7 +8,5 @@ services:
     volumes:
       # Persist configuration
       - ${HOME}/.config/zitadel-tui:/root/.config/zitadel-tui
-      # Optional templates file
-      - ${HOME}/.zitadel-tui.yml:/root/.zitadel-tui.yml:ro
     environment:
       - TERM=xterm-256color

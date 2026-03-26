@@ -56,7 +56,6 @@ pub struct TuiBootstrap {
     pub app_records: Vec<Record>,
     pub user_records: Vec<Record>,
     pub idp_records: Vec<Record>,
-    pub legacy_config_detected: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,7 +91,6 @@ pub enum PendingAction {
     ConfigureGoogleIdp,
     ValidateAuthSetup,
     SaveConfig,
-    ImportLegacyConfig,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -146,7 +144,6 @@ pub struct App {
     pub auth_label: String,
     pub templates_path: Option<String>,
     pub setup_required: bool,
-    pub legacy_config_detected: bool,
     pub resources: Vec<Resource>,
     pub selected_resource: usize,
     pub selected_action: usize,
@@ -194,7 +191,6 @@ impl App {
             auth_label: bootstrap.auth_label,
             templates_path: templates_path.clone(),
             setup_required,
-            legacy_config_detected: bootstrap.legacy_config_detected,
             resources: vec![
                 Resource {
                     kind: ResourceKind::Applications,
@@ -246,7 +242,6 @@ impl App {
         self.auth_label = bootstrap.auth_label;
         self.templates_path = bootstrap.templates_path;
         self.setup_required = bootstrap.setup_required;
-        self.legacy_config_detected = bootstrap.legacy_config_detected;
         self.app_records = if bootstrap.app_records.is_empty() {
             sample_app_records()
         } else {
@@ -424,7 +419,6 @@ impl App {
                 app_records: self.app_records.clone(),
                 user_records: self.user_records.clone(),
                 idp_records: self.idp_records.clone(),
-                legacy_config_detected: self.legacy_config_detected,
             }))
         } else {
             CanvasMode::Browse
@@ -597,16 +591,10 @@ const AUTH_ACTIONS: [Action; 1] = [Action {
     hotkey: "[enter]",
 }];
 
-const CONFIG_ACTIONS: [Action; 2] = [
-    Action {
-        label: "Edit config",
-        hotkey: "[enter]",
-    },
-    Action {
-        label: "Import legacy",
-        hotkey: "[enter]",
-    },
-];
+const CONFIG_ACTIONS: [Action; 1] = [Action {
+    label: "Edit config",
+    hotkey: "[enter]",
+}];
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
@@ -953,7 +941,7 @@ fn footer_lines(app: &App) -> Vec<Line<'static>> {
         ],
         ResourceKind::Config => vec![
             status_heading("Configuration"),
-            muted_line("Runtime config stays in TOML; legacy YAML import remains a migration-only bridge."),
+            muted_line("Runtime config is TOML only, while app and user templates stay in YAML."),
         ],
     }
 }
@@ -997,11 +985,11 @@ fn browse_lines(app: &App) -> Vec<String> {
         ResourceKind::Auth => vec![
             "This area owns interactive setup and auth recovery.".to_string(),
             "Fill host, optional project, auth method, and template path, then validate before returning to the main shell.".to_string(),
-            "OAuth device flow remains visible as a future path only.".to_string(),
+            "OAuth device flow remains visible as a placeholder only.".to_string(),
         ],
         ResourceKind::Config => vec![
             "Edit saved host, project, and templates path here.".to_string(),
-            "If a legacy Ruby YAML file exists, import can move it into canonical TOML config.".to_string(),
+            "Runtime config is canonical TOML under the XDG config path.".to_string(),
         ],
     }
 }
@@ -1089,7 +1077,6 @@ fn pending_label(pending: &PendingAction) -> &'static str {
         PendingAction::ConfigureGoogleIdp => "configure Google IDP",
         PendingAction::ValidateAuthSetup => "validate auth setup",
         PendingAction::SaveConfig => "save config",
-        PendingAction::ImportLegacyConfig => "import legacy config",
     }
 }
 
@@ -1124,7 +1111,7 @@ fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
                 kind: FieldKind::Choice(vec![
                     "PAT".to_string(),
                     "Service account".to_string(),
-                    "OAuth device (planned)".to_string(),
+                    "OAuth device (placeholder)".to_string(),
                 ]),
                 help: "Choose PAT or service account for this slice".to_string(),
             },
@@ -1408,7 +1395,6 @@ mod tests {
             app_records: vec![],
             user_records: vec![],
             idp_records: vec![],
-            legacy_config_detected: true,
         })
     }
 
@@ -1456,7 +1442,6 @@ mod tests {
             app_records: vec![],
             user_records: vec![],
             idp_records: vec![],
-            legacy_config_detected: false,
         });
 
         assert!(matches!(app.canvas_mode, CanvasMode::Setup(_)));
@@ -1474,7 +1459,6 @@ mod tests {
             app_records: vec![],
             user_records: vec![],
             idp_records: vec![],
-            legacy_config_detected: false,
         });
         form.selected_field = 3;
         app.set_canvas_mode(CanvasMode::Setup(form));

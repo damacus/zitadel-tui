@@ -5,35 +5,32 @@
 ```bash
 git clone https://github.com/damacus/zitadel-tui.git
 cd zitadel-tui
-bundle install
+cargo build --release
 ```
 
 ## Running
 
 ```bash
 # Run the TUI
-./bin/zitadel-tui
+cargo run
 
-# Or with bundle
-bundle exec ./bin/zitadel-tui
+# Or run the built binary directly
+./target/release/zitadel-tui
 ```
 
-On first run, you'll be prompted to configure your Zitadel URL.
+On first run, the TUI opens the setup flow and writes configuration to
+`~/.config/zitadel-tui/config.toml`.
 
 ## Requirements
 
-- Ruby >= 3.2
-- kubectl configured with cluster access (for fetching secrets)
+- Rust 1.89 or newer
+- A Zitadel personal access token or service account file
 
 ## Development
 
 ```bash
-# Install dependencies
-bundle install
-
-# Run RuboCop
-bundle exec rubocop
-
-# Run tests
-bundle exec rspec
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo check
 ```

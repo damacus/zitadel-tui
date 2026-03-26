@@ -5,20 +5,14 @@ identity providers, and runtime configuration.
 
 ## Status
 
-The Rust migration is in progress and is now the primary implementation path.
+The migration is complete: the project is now Rust-only.
 
-Implemented today:
-- Cargo-based crate, build, lint, and test flow
-- Headless commands for apps, users, IDPs, auth validation, and config
-- Token and direct service-account authentication with no Kubernetes dependency
-- Legacy Ruby YAML config import into canonical Rust TOML config
-- `Command Atelier` TUI shell with resource workspace switching and popup inspector
-- GitHub Actions release wiring for binaries, Docker images, and `crates.io`
-
-Still in progress:
-- full interactive mutation flows inside the TUI
-- OAuth device flow
-- final removal of the legacy Ruby runtime
+Current status:
+- Rust crate, TUI, CLI, and release automation are the only supported runtime path
+- runtime config is TOML-only in the XDG config directory
+- PAT and direct service-account authentication are supported
+- app and user templates remain YAML-based
+- OAuth device flow remains a visible placeholder, not an implemented feature
 
 ## Features
 
@@ -42,7 +36,6 @@ Still in progress:
 
 - **Configuration and Auth**
   - TOML config in XDG config space
-  - legacy `~/.zitadel-tui.yml` import
   - auth precedence `CLI > env > config > setup`
   - PAT and direct service-account file support
 
@@ -114,12 +107,6 @@ pat = "zitadel-pat"
 service_account_file = "/path/to/service-account.json"
 ```
 
-Legacy import:
-
-```bash
-zitadel-tui --once config import-legacy
-```
-
 ## Templates File
 
 The apps/users templates file remains YAML for compatibility during the
@@ -162,9 +149,8 @@ Supported today:
 Not supported anymore:
 
 - Kubernetes secret lookup
-- `kubectl`-backed auth bootstrap
 
-Planned next:
+Deferred:
 
 - OAuth device flow with persisted session material
 

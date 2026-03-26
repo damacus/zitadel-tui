@@ -95,7 +95,6 @@ pub struct AuthCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum ConfigAction {
     Show,
-    ImportLegacy,
 }
 
 #[derive(clap::Args, Debug, Clone)]

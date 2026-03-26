@@ -115,20 +115,6 @@ async fn execute_command(command: &Command, args: &Cli, config: &AppConfig) -> R
 fn execute_config_command(command: &ConfigCommand, config: &AppConfig) -> Result<Value> {
     match command.action {
         ConfigAction::Show => Ok(serde_json::to_value(config)?),
-        ConfigAction::ImportLegacy => {
-            if let Some(path) = dirs::home_dir().map(|home| home.join(".zitadel-tui.yml")) {
-                let imported = AppConfig::import_legacy(&path)?;
-                let saved_to = imported.save_to_canonical_path()?;
-                Ok(serde_json::json!({
-                    "saved_to": saved_to,
-                    "config": imported
-                }))
-            } else {
-                Ok(serde_json::json!({
-                    "message": "No home directory found for legacy import"
-                }))
-            }
-        }
     }
 }
 

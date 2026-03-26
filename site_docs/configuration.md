@@ -1,16 +1,16 @@
 # Configuration
 
-The TUI stores configuration in `~/.zitadel-tui.yml`:
+The TUI stores runtime configuration in `~/.config/zitadel-tui/config.toml`:
 
-```yaml
-zitadel_url: https://zitadel.example.com
-project_id: "123456789"
-apps_config_file: /path/to/apps.yml
+```toml
+zitadel_url = "https://zitadel.example.com"
+project_id = "123456789"
+templates_file = "/path/to/apps.yml"
 ```
 
 ## Apps and Users Configuration
 
-Define your OIDC applications and predefined users in a YAML file:
+Define your OIDC applications and predefined users in a separate YAML file:
 
 ```yaml
 # OIDC Applications
@@ -44,10 +44,13 @@ See `apps.yml.example` for more examples.
 
 ## Authentication
 
-The TUI supports two authentication methods:
+The TUI supports two authentication methods today:
 
-1. **Service Account (JWT)** - Uses a service account key from Kubernetes
-   secret `zitadel-admin-sa` in namespace `authentication`
+1. **Service Account** - Uses a local service account file referenced by
+   `service_account_file` in the TOML config, or passed by CLI/environment.
 
-2. **Personal Access Token (PAT)** - Uses a PAT from Kubernetes secret
-   `zitadel-admin-sa-pat` in namespace `authentication`
+2. **Personal Access Token (PAT)** - Uses a token from `pat` in the TOML
+   config, or passed by CLI/environment.
+
+OAuth device flow remains visible in the TUI as a placeholder, but is not
+implemented yet.

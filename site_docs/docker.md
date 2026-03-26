@@ -6,12 +6,11 @@
 docker pull ghcr.io/damacus/zitadel-tui:latest
 ```
 
-## Run with kubectl access
+## Run with TOML config
 
 ```bash
 docker run -it --rm \
-  -v ~/.kube:/root/.kube:ro \
-  -v ~/.zitadel-tui.yml:/root/.zitadel-tui.yml \
+  -v ~/.config/zitadel-tui:/root/.config/zitadel-tui:ro \
   ghcr.io/damacus/zitadel-tui:latest
 ```
 
@@ -22,8 +21,7 @@ services:
   zitadel-tui:
     image: ghcr.io/damacus/zitadel-tui:latest
     volumes:
-      - ~/.kube:/root/.kube:ro
-      - ~/.zitadel-tui.yml:/root/.zitadel-tui.yml
+      - ~/.config/zitadel-tui:/root/.config/zitadel-tui:ro
     stdin_open: true
     tty: true
 ```
