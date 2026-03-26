@@ -238,7 +238,6 @@ async fn persist_login_session(
     };
     cache.save()
 }
-
 async fn execute_apps_command(
     command: &AppsCommand,
     args: &Cli,
