@@ -11,9 +11,8 @@ Current status:
 
 - Rust crate, TUI, CLI, and release automation are the only supported runtime path
 - runtime config is TOML-only in the XDG config directory
-- PAT and direct service-account authentication are supported
+- PAT, service-account, and OAuth Device Flow (OIDC) authentication are supported
 - app and user templates remain YAML-based
-- OAuth device flow remains a visible placeholder, not an implemented feature
 
 ## Features
 
@@ -37,9 +36,10 @@ Current status:
 
 - **Configuration and Auth**
   - TOML config in XDG config space
-  - auth precedence `CLI > env > config`
+  - auth precedence `CLI > env > config > session token`
   - PAT precedence over service-account credentials within each source
-  - PAT and direct service-account file support
+  - PAT, service-account file, and OAuth Device Flow (`auth login`) support
+  - session tokens cached in `~/.config/zitadel-tui/tokens.json` with auto-refresh
 
 ## Installation
 
@@ -240,9 +240,26 @@ Example: `zitadel-tui --once idps configure-google --client-id google-client-id 
 
 #### `auth`
 
+`auth login`
+: Authenticate via the OAuth 2.0 Device Authorization Grant. Prints a URL and
+short code, waits for browser approval, then saves the access and refresh tokens
+to `~/.config/zitadel-tui/tokens.json`. Requires a Zitadel native app with the
+Device Code grant enabled.
+Example: `zitadel-tui --once --host https://zitadel.example.com auth login --client-id <CLIENT_ID>`
+
+`--client-id <CLIENT_ID>`
+: The Zitadel native app client ID. If omitted and not set in config, the
+command prompts interactively and saves the value to config for future use.
+Also available as `device_client_id` in config.
+
+`auth logout`
+: Remove the stored session token. Subsequent commands will require explicit
+credentials or a new `auth login`.
+Example: `zitadel-tui --once auth logout`
+
 `auth validate`
 : Resolve credentials, authenticate, and report the active auth source and
-project count. This command has no command-specific flags.
+project count. Works with any credential source including a cached session token.
 Example: `zitadel-tui --once --json auth validate`
 
 #### `config`
@@ -268,6 +285,7 @@ project_id = "123456789"
 apps_config_file = "/path/to/apps.yml"
 pat = "zitadel-pat"
 service_account_file = "/path/to/service-account.json"
+device_client_id = "your-native-app-client-id"
 ```
 
 ## Templates File
@@ -305,22 +323,48 @@ users:
 
 Authentication is resolved in this order:
 
-1. CLI flags
-2. Environment variables
-3. TOML config
+1. `--token` / `ZITADEL_TOKEN` / `pat` in config (PAT)
+2. `--service-account-file` / `ZITADEL_SERVICE_ACCOUNT_FILE` / `service_account_file` in config
+3. Cached session token from `auth login` (with automatic refresh)
 
-Within each source, PAT credentials are checked before service-account
-credentials.
+### OAuth Device Flow (recommended for interactive use)
 
-Supported today:
+Register a native app in your Zitadel instance with the **Device Code** grant
+type enabled, then log in once:
 
-1. `--token`, `ZITADEL_TOKEN`, or `pat` in config
-2. `--service-account-file`, `ZITADEL_SERVICE_ACCOUNT_FILE`, or
-   `service_account_file` in config
+```bash
+zitadel-tui --once --host https://zitadel.example.com auth login --client-id <CLIENT_ID>
+```
 
-Deferred:
+The command prints a URL and a short code. Open the URL in your browser,
+enter the code, and approve the request. The CLI polls in the background and
+saves the access and refresh tokens to
+`~/.config/zitadel-tui/tokens.json` (mode `0600`).
 
-- OAuth device flow remains a visible placeholder and is not implemented
+After login, subsequent commands use the cached token automatically:
+
+```bash
+zitadel-tui --once --host https://zitadel.example.com apps list
+zitadel-tui --once --host https://zitadel.example.com auth validate
+```
+
+Tokens are silently refreshed when they expire. Log out with:
+
+```bash
+zitadel-tui --once auth logout
+```
+
+### Token cache
+
+The session token cache lives at:
+
+```text
+~/.config/zitadel-tui/tokens.json
+```
+
+It is created with mode `0600`. The cache stores the access token, refresh
+token, expiry timestamp, client ID, and host. The `device_client_id` config
+field remembers your client ID so you only need `--client-id` once.
 
 ## Docker
 
