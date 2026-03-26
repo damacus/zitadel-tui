@@ -172,6 +172,20 @@ cargo test
 cargo check
 ```
 
+### Git hooks
+
+This repo uses `lefthook` for local guardrails:
+
+```bash
+lefthook install
+```
+
+Configured hooks:
+
+- `pre-commit`: `cargo fmt --check`
+- `commit-msg`: enforce Conventional Commits
+- `pre-push`: `cargo build`
+
 ## Release
 
 The release workflow is tag-driven through `release-please` and publishes:

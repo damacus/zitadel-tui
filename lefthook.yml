@@ -1,0 +1,30 @@
+pre-commit:
+  parallel: true
+  skip:
+    - merge
+    - rebase
+  commands:
+    rustfmt:
+      files: git diff --name-only --cached --diff-filter=ACMR
+      glob: "{Cargo.toml,Cargo.lock,src/**/*.rs,tests/**/*.rs,benches/**/*.rs}"
+      run: cargo fmt --check
+
+commit-msg:
+  parallel: false
+  skip:
+    - merge
+    - rebase
+  commands:
+    conventional-commit:
+      run: ./scripts/validate_commit_msg.sh {1}
+
+pre-push:
+  parallel: false
+  skip:
+    - merge
+    - rebase
+  commands:
+    build:
+      files: git diff --name-only --diff-filter=ACMR @{upstream}..HEAD 2>/dev/null || true
+      glob: "{Cargo.toml,Cargo.lock,src/**/*.rs,tests/**/*.rs,benches/**/*.rs}"
+      run: cargo build
