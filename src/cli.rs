@@ -5,25 +5,25 @@ use clap::{Parser, Subcommand};
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "A terminal UI for managing Zitadel resources")]
 pub struct Cli {
-    #[arg(long, env = "ZITADEL_URL")]
+    #[arg(long, env = "ZITADEL_URL", global = true)]
     pub host: Option<String>,
 
-    #[arg(long, env = "ZITADEL_PROJECT_ID")]
+    #[arg(long, env = "ZITADEL_PROJECT_ID", global = true)]
     pub project_id: Option<String>,
 
-    #[arg(long, env = "ZITADEL_TOKEN", hide_env_values = true)]
+    #[arg(long, env = "ZITADEL_TOKEN", hide_env_values = true, global = true)]
     pub token: Option<String>,
 
-    #[arg(long, env = "ZITADEL_SERVICE_ACCOUNT_FILE")]
+    #[arg(long, env = "ZITADEL_SERVICE_ACCOUNT_FILE", global = true)]
     pub service_account_file: Option<PathBuf>,
 
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub config: Option<PathBuf>,
 
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub json: bool,
 
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub once: bool,
 
     #[command(subcommand)]
@@ -83,7 +83,15 @@ pub struct IdpsCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum AuthAction {
+    Login(LoginArgs),
+    Logout,
     Validate,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct LoginArgs {
+    #[arg(long)]
+    pub client_id: Option<String>,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -266,5 +274,175 @@ mod tests {
             })),
             "config"
         );
+    }
+
+    #[test]
+    fn parses_host_flag() {
+        let cli = Cli::parse_from(["zitadel-tui", "--host", "https://zitadel.example.com"]);
+        assert_eq!(cli.host.as_deref(), Some("https://zitadel.example.com"));
+    }
+
+    #[test]
+    fn host_defaults_to_none_when_absent() {
+        let cli = Cli::parse_from(["zitadel-tui"]);
+        assert!(cli.host.is_none());
+    }
+
+    #[test]
+    fn parses_once_flag() {
+        let cli = Cli::parse_from(["zitadel-tui", "--once", "apps", "list"]);
+        assert!(cli.once);
+    }
+
+    #[test]
+    fn parses_once_with_host_and_subcommand() {
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "--once",
+            "--host",
+            "https://zitadel.example.com",
+            "apps",
+            "list",
+        ]);
+        assert!(cli.once);
+        assert_eq!(cli.host.as_deref(), Some("https://zitadel.example.com"));
+        assert!(matches!(
+            cli.command,
+            Some(Command::Apps(AppsCommand {
+                action: AppsAction::List
+            }))
+        ));
+    }
+
+    #[test]
+    fn parses_token_flag() {
+        let cli = Cli::parse_from(["zitadel-tui", "--token", "my-secret-token"]);
+        assert_eq!(cli.token.as_deref(), Some("my-secret-token"));
+    }
+
+    #[test]
+    fn parses_project_id_flag() {
+        let cli = Cli::parse_from(["zitadel-tui", "--project-id", "proj-123"]);
+        assert_eq!(cli.project_id.as_deref(), Some("proj-123"));
+    }
+
+    #[test]
+    fn host_flag_requires_a_value() {
+        let result = Cli::try_parse_from(["zitadel-tui", "--host"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parses_auth_login() {
+        let cli = Cli::parse_from(["zitadel-tui", "--once", "auth", "login"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Auth(AuthCommand {
+                action: AuthAction::Login(LoginArgs { client_id: None })
+            }))
+        ));
+    }
+
+    #[test]
+    fn parses_auth_login_with_client_id() {
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "--once",
+            "auth",
+            "login",
+            "--client-id",
+            "my-client",
+        ]);
+        match cli.command {
+            Some(Command::Auth(AuthCommand {
+                action: AuthAction::Login(args),
+            })) => assert_eq!(args.client_id.as_deref(), Some("my-client")),
+            _ => panic!("expected auth login"),
+        }
+    }
+
+    #[test]
+    fn parses_auth_logout() {
+        let cli = Cli::parse_from(["zitadel-tui", "--once", "auth", "logout"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Auth(AuthCommand {
+                action: AuthAction::Logout
+            }))
+        ));
+    }
+
+    // Global arg tests: flags may appear after the subcommand
+    #[test]
+    fn host_after_subcommand_is_accepted() {
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "--once",
+            "apps",
+            "list",
+            "--host",
+            "https://zitadel.example.com",
+        ]);
+        assert_eq!(cli.host.as_deref(), Some("https://zitadel.example.com"));
+    }
+
+    #[test]
+    fn token_after_subcommand_is_accepted() {
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "--once",
+            "apps",
+            "list",
+            "--token",
+            "my-token",
+        ]);
+        assert_eq!(cli.token.as_deref(), Some("my-token"));
+    }
+
+    #[test]
+    fn project_id_after_subcommand_is_accepted() {
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "--once",
+            "apps",
+            "list",
+            "--project-id",
+            "proj-456",
+        ]);
+        assert_eq!(cli.project_id.as_deref(), Some("proj-456"));
+    }
+
+    #[test]
+    fn json_after_subcommand_is_accepted() {
+        let cli = Cli::parse_from(["zitadel-tui", "--once", "apps", "list", "--json"]);
+        assert!(cli.json);
+    }
+
+    #[test]
+    fn once_after_subcommand_is_accepted() {
+        let cli = Cli::parse_from(["zitadel-tui", "apps", "list", "--once"]);
+        assert!(cli.once);
+    }
+
+    #[test]
+    fn all_global_flags_after_subcommand() {
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "apps",
+            "list",
+            "--once",
+            "--host",
+            "https://zitadel.example.com",
+            "--token",
+            "tok",
+            "--project-id",
+            "proj-1",
+            "--json",
+        ]);
+        assert!(cli.once);
+        assert!(cli.json);
+        assert_eq!(cli.host.as_deref(), Some("https://zitadel.example.com"));
+        assert_eq!(cli.token.as_deref(), Some("tok"));
+        assert_eq!(cli.project_id.as_deref(), Some("proj-1"));
     }
 }

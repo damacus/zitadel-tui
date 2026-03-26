@@ -125,10 +125,76 @@ async fn execute_auth_command(
     args: &Cli,
     config: &AppConfig,
 ) -> Result<Value> {
-    let host = resolved_host(args, config)?;
-    let http = reqwest::Client::new();
-    match command.action {
+    match &command.action {
+        AuthAction::Login(login_args) => {
+            let host = resolved_host(args, config)?;
+            let client_id = if let Some(id) = &login_args.client_id {
+                id.clone()
+            } else if let Some(id) = &config.device_client_id {
+                id.clone()
+            } else {
+                let id = prompt_for_client_id()?;
+                let mut updated = config.clone();
+                updated.device_client_id = Some(id.clone());
+                let _ = updated.save_to_canonical_path();
+                id
+            };
+
+            let http = reqwest::Client::new();
+            let auth_resp = oidc::device_authorize(&http, &host, &client_id).await?;
+
+            eprintln!("\nOpen this URL in your browser:");
+            eprintln!(
+                "  {}",
+                auth_resp
+                    .verification_uri_complete
+                    .as_deref()
+                    .unwrap_or(&auth_resp.verification_uri)
+            );
+            eprintln!(
+                "\nOr go to {} and enter code: {}\n",
+                auth_resp.verification_uri, auth_resp.user_code
+            );
+
+            let mut interval = auth_resp.interval;
+            let tokens = loop {
+                tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+                match oidc::poll_for_token(&http, &host, &client_id, &auth_resp.device_code).await {
+                    Ok(tokens) => break tokens,
+                    Err(oidc::PollError::Pending) => {
+                        eprint!(".");
+                    }
+                    Err(oidc::PollError::SlowDown) => {
+                        interval += 5;
+                        eprint!(".");
+                    }
+                    Err(oidc::PollError::Fatal(e)) => return Err(e),
+                }
+            };
+            eprintln!("\nAuthenticated.");
+
+            let cache = token_cache::TokenCache {
+                access_token: tokens.access_token,
+                refresh_token: tokens.refresh_token,
+                expires_at: Some(oidc::expires_at_from_now(tokens.expires_in)),
+                client_id,
+                host: host.clone(),
+            };
+            cache.save()?;
+
+            Ok(serde_json::json!({
+                "status": "authenticated",
+                "host": host,
+                "token_cache": token_cache::TokenCache::path()?.display().to_string(),
+            }))
+        }
+        AuthAction::Logout => {
+            token_cache::TokenCache::clear()?;
+            Ok(serde_json::json!({ "status": "logged out" }))
+        }
         AuthAction::Validate => {
+            let host = resolved_host(args, config)?;
+            let http = reqwest::Client::new();
             let auth = resolve_access_token(
                 &http,
                 &host,
@@ -146,6 +212,17 @@ async fn execute_auth_command(
             }))
         }
     }
+}
+
+fn prompt_for_client_id() -> Result<String> {
+    eprint!("Zitadel native app client ID: ");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let id = input.trim().to_string();
+    if id.is_empty() {
+        anyhow::bail!("client ID cannot be empty");
+    }
+    Ok(id)
 }
 
 async fn execute_apps_command(

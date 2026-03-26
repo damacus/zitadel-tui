@@ -26,7 +26,8 @@ impl TokenCache {
         }
         let contents = fs::read_to_string(&path)
             .with_context(|| format!("failed to read token cache {}", path.display()))?;
-        let cache = serde_json::from_str(&contents).with_context(|| "failed to parse token cache")?;
+        let cache =
+            serde_json::from_str(&contents).with_context(|| "failed to parse token cache")?;
         Ok(Some(cache))
     }
 

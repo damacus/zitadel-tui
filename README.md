@@ -8,6 +8,7 @@ identity providers, and runtime configuration.
 The migration is complete: the project is now Rust-only.
 
 Current status:
+
 - Rust crate, TUI, CLI, and release automation are the only supported runtime path
 - runtime config is TOML-only in the XDG config directory
 - PAT and direct service-account authentication are supported

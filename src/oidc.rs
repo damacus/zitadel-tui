@@ -53,7 +53,10 @@ pub async fn device_authorize(
     host: &str,
     client_id: &str,
 ) -> Result<DeviceAuthResponse> {
-    let url = format!("{}/oauth/v2/device_authorization", host.trim_end_matches('/'));
+    let url = format!(
+        "{}/oauth/v2/device_authorization",
+        host.trim_end_matches('/')
+    );
     let params = [("client_id", client_id), ("scope", SCOPES)];
     let resp = client.post(&url).form(&params).send().await?;
     let status = resp.status();
