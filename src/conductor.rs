@@ -79,15 +79,27 @@ impl TuiConductor {
             .or_else(|| self.config.project_id.clone())
             .unwrap_or_else(|| "default".to_string());
 
-        self.auth_label = if self.config.pat.is_some() {
+        let has_credential = self.cli.token.is_some()
+            || self.config.pat.is_some()
+            || self.config.service_account_file.is_some()
+            || self.cli.service_account_file.is_some()
+            || crate::token_cache::TokenCache::load()
+                .ok()
+                .flatten()
+                .map(|c| !c.is_expired())
+                .unwrap_or(false);
+        self.auth_label = if self.config.pat.is_some() || self.cli.token.is_some() {
             "PAT".to_string()
-        } else if self.config.service_account_file.is_some() {
+        } else if self.config.service_account_file.is_some()
+            || self.cli.service_account_file.is_some()
+        {
             "Service account".to_string()
+        } else if has_credential {
+            "Session token".to_string()
         } else {
             "Setup required".to_string()
         };
-        self.setup_required = self.config.zitadel_url.is_none()
-            || (self.config.pat.is_none() && self.config.service_account_file.is_none());
+        self.setup_required = self.config.zitadel_url.is_none() || !has_credential;
 
         let http = HttpClient::new();
         let Ok(auth) = resolve_access_token(
