@@ -27,7 +27,7 @@ identity providers, and runtime configuration.
   - Canonical TOML config in XDG config space
   - Auth precedence `CLI > env > config > session token`
   - PAT precedence over service-account credentials within each source
-  - PAT, service-account file, and OAuth Device Flow (`auth login`) support
+  - PAT, service-account file, and OAuth Device Flow (`auth login`) authentication are supported
 
 ## Quick Start
 
@@ -71,7 +71,7 @@ Global options:
 
 Subcommands:
 
-- `apps`: `list`, `create`, `delete`, `regenerate-secret`, `quick-setup`
+- `apps`: `list`, `create`, `create-native`, `delete`, `regenerate-secret`, `quick-setup`
 - `users`: `list`, `create`, `create-admin`, `grant-iam-owner`, `quick-setup`
 - `idps`: `list`, `configure-google`
 - `auth`: `login`, `logout`, `status`
@@ -96,6 +96,7 @@ project_id = "123456789"
 apps_config_file = "/path/to/apps.yml"
 pat = "zitadel-pat"
 service_account_file = "/path/to/service-account.json"
+device_client_id = "your-native-app-client-id"
 ```
 
 Templates for apps and users remain YAML-based.
@@ -107,7 +108,7 @@ Templates for apps and users remain YAML-based.
 ## Requirements
 
 - Rust 1.89 or newer
-- A Zitadel PAT, service account file, or device-flow login path
+- A Zitadel PAT, service account file, or a native app configured for Device Code login
 
 ## License
 

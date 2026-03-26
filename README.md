@@ -342,6 +342,7 @@ Authentication is resolved in this order:
 
 Register a native app in your Zitadel instance with the **Device Code** grant
 type enabled and JWT access tokens enabled, then log in once:
+type enabled and JWT access tokens enabled, then log in once:
 
 ```bash
 zitadel-tui --once --host https://zitadel.example.com auth login --client-id <CLIENT_ID>
@@ -356,6 +357,7 @@ After login, subsequent commands use the cached token automatically:
 
 ```bash
 zitadel-tui --once --host https://zitadel.example.com apps list
+zitadel-tui --once --host https://zitadel.example.com auth status
 zitadel-tui --once --host https://zitadel.example.com auth status
 ```
 
