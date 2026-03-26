@@ -4,6 +4,8 @@ mod client;
 mod conductor;
 mod config;
 mod oidc;
+#[cfg(test)]
+mod test_support;
 mod token_cache;
 mod tui;
 
@@ -173,14 +175,7 @@ async fn execute_auth_command(
             };
             eprintln!("\nAuthenticated.");
 
-            let cache = token_cache::TokenCache {
-                access_token: tokens.access_token,
-                refresh_token: tokens.refresh_token,
-                expires_at: Some(oidc::expires_at_from_now(tokens.expires_in)),
-                client_id,
-                host: host.clone(),
-            };
-            cache.save()?;
+            persist_login_session(&http, &host, &client_id, tokens).await?;
 
             Ok(serde_json::json!({
                 "status": "authenticated",
@@ -193,7 +188,7 @@ async fn execute_auth_command(
             Ok(serde_json::json!({ "status": "logged out" }))
         }
         AuthAction::Status => {
-            let host = resolved_host(args, config)?;
+            let host = resolved_host_or_cache(args, config)?;
             let http = reqwest::Client::new();
             let auth = resolve_access_token(
                 &http,
@@ -204,11 +199,12 @@ async fn execute_auth_command(
             )
             .await?;
             let client = ZitadelClient::new(host.clone(), auth.token)?;
-            let projects = client.list_projects().await?;
+            let me = client.whoami().await?;
             Ok(serde_json::json!({
                 "host": host,
                 "auth_source": auth.source,
-                "project_count": projects.len(),
+                "user_id": me["user"]["userId"],
+                "login_name": me["user"]["preferredLoginName"],
             }))
         }
     }
@@ -223,6 +219,24 @@ fn prompt_for_client_id() -> Result<String> {
         anyhow::bail!("client ID cannot be empty");
     }
     Ok(id)
+}
+
+async fn persist_login_session(
+    http: &reqwest::Client,
+    host: &str,
+    client_id: &str,
+    tokens: oidc::OidcTokens,
+) -> Result<()> {
+    auth::validate_login_session_token(http, host, client_id, &tokens.access_token).await?;
+
+    let cache = token_cache::TokenCache {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: Some(oidc::expires_at_from_now(tokens.expires_in)),
+        client_id: client_id.to_string(),
+        host: host.to_string(),
+    };
+    cache.save()
 }
 
 async fn execute_apps_command(
@@ -264,6 +278,11 @@ async fn execute_apps_command(
             };
             client
                 .create_oidc_app(&project_id, &name, redirect_uris, public)
+                .await
+        }
+        AppsAction::CreateNative(native) => {
+            client
+                .create_native_app(&project_id, &native.name, native.device_code)
                 .await
         }
         AppsAction::Delete(delete) => client.delete_app(&project_id, &delete.app_id).await,
@@ -396,6 +415,16 @@ fn resolved_host(args: &Cli, config: &AppConfig) -> Result<String> {
         .clone()
         .or_else(|| config.zitadel_url.clone())
         .context("Zitadel URL is required via --host, ZITADEL_URL, or config")
+}
+
+fn resolved_host_or_cache(args: &Cli, config: &AppConfig) -> Result<String> {
+    resolved_host(args, config).or_else(|_| {
+        token_cache::TokenCache::load()
+            .ok()
+            .flatten()
+            .map(|c| c.host)
+            .context("Zitadel URL is required via --host, ZITADEL_URL, config, or a cached login session")
+    })
 }
 
 async fn resolved_project_id(
@@ -558,6 +587,19 @@ fn print_human(command: &Command, result: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Server;
+    use std::{
+        env, fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temp_cache_path() -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        env::temp_dir().join(format!("zitadel-tui-main-test-tokens-{unique}.json"))
+    }
 
     #[test]
     fn rejects_command_without_once() {
@@ -631,5 +673,170 @@ mod tests {
         let cli = Cli::parse_from(["zitadel-tui"]);
         let config = AppConfig::default();
         assert!(resolved_host(&cli, &config).is_err());
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn persist_login_session_saves_cache_after_successful_auth_probe() {
+        let mut server = Server::new_async().await;
+        let whoami = server
+            .mock("GET", "/auth/v1/users/me")
+            .match_header("authorization", "Bearer header.payload.signature")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"user":{"userId":"u1","preferredLoginName":"alice@example.com"}}"#)
+            .create_async()
+            .await;
+
+        let cache_path = temp_cache_path();
+        let _guard = crate::test_support::env_lock();
+        let original_cache = env::var("ZITADEL_TUI_TOKEN_CACHE").ok();
+        env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
+
+        let http = reqwest::Client::new();
+        let tokens = oidc::OidcTokens {
+            access_token: "header.payload.signature".to_string(),
+            refresh_token: Some("refresh-token".to_string()),
+            expires_in: 3600,
+        };
+
+        persist_login_session(&http, &server.url(), "client-1", tokens)
+            .await
+            .unwrap();
+
+        whoami.assert_async().await;
+        assert!(cache_path.exists());
+        let saved = token_cache::TokenCache::load().unwrap().unwrap();
+        assert_eq!(saved.client_id, "client-1");
+        assert_eq!(saved.host, server.url());
+
+        env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
+        let _ = fs::remove_file(&cache_path);
+        if let Some(path) = original_cache {
+            env::set_var("ZITADEL_TUI_TOKEN_CACHE", path);
+        }
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn persist_login_session_rejects_unusable_device_tokens_without_writing_cache() {
+        let cache_path = temp_cache_path();
+        let _guard = crate::test_support::env_lock();
+        let original_cache = env::var("ZITADEL_TUI_TOKEN_CACHE").ok();
+        env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
+
+        let http = reqwest::Client::new();
+        let tokens = oidc::OidcTokens {
+            access_token: "opaque-token".to_string(),
+            refresh_token: Some("refresh-token".to_string()),
+            expires_in: 3600,
+        };
+
+        let error = persist_login_session(&http, "https://zitadel.example.com", "client-1", tokens)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("JWT access tokens"));
+        assert!(!cache_path.exists());
+
+        env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
+        let _ = fs::remove_file(&cache_path);
+        if let Some(path) = original_cache {
+            env::set_var("ZITADEL_TUI_TOKEN_CACHE", path);
+        }
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn persist_login_session_rejects_auth_api_probe_failures_without_writing_cache() {
+        let mut server = Server::new_async().await;
+        let whoami = server
+            .mock("GET", "/auth/v1/users/me")
+            .match_header("authorization", "Bearer header.payload.signature")
+            .with_status(403)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"code":7,"message":"authentication required (AUTHZ-Kl3p0)","details":[{"id":"AUTHZ-Kl3p0"}]}"#,
+            )
+            .create_async()
+            .await;
+
+        let cache_path = temp_cache_path();
+        let _guard = crate::test_support::env_lock();
+        let original_cache = env::var("ZITADEL_TUI_TOKEN_CACHE").ok();
+        env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
+
+        let http = reqwest::Client::new();
+        let tokens = oidc::OidcTokens {
+            access_token: "header.payload.signature".to_string(),
+            refresh_token: Some("refresh-token".to_string()),
+            expires_in: 3600,
+        };
+
+        let error = persist_login_session(&http, &server.url(), "client-1", tokens)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        whoami.assert_async().await;
+        assert!(error.contains("JWT access tokens"));
+        assert!(!cache_path.exists());
+
+        env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
+        let _ = fs::remove_file(&cache_path);
+        if let Some(path) = original_cache {
+            env::set_var("ZITADEL_TUI_TOKEN_CACHE", path);
+        }
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn auth_status_uses_valid_cached_session_tokens() {
+        let mut server = Server::new_async().await;
+        let whoami = server
+            .mock("GET", "/auth/v1/users/me")
+            .match_header("authorization", "Bearer header.payload.signature")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"user":{"userId":"u1","preferredLoginName":"alice@example.com"}}"#)
+            .create_async()
+            .await;
+
+        let cache_path = temp_cache_path();
+        let _guard = crate::test_support::env_lock();
+        let original_cache = env::var("ZITADEL_TUI_TOKEN_CACHE").ok();
+        env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let cache = token_cache::TokenCache {
+            access_token: "header.payload.signature".to_string(),
+            refresh_token: Some("refresh-token".to_string()),
+            expires_at: Some(now + 3600),
+            client_id: "client-1".to_string(),
+            host: server.url(),
+        };
+        cache.save().unwrap();
+
+        let cli = Cli::parse_from(["zitadel-tui", "--once", "auth", "status"]);
+        let command = AuthCommand {
+            action: AuthAction::Status,
+        };
+        let config = AppConfig::default();
+        let result = execute_auth_command(&command, &cli, &config).await.unwrap();
+
+        whoami.assert_async().await;
+        assert_eq!(result["auth_source"], "session token");
+        assert_eq!(result["user_id"], "u1");
+        assert_eq!(result["login_name"], "alice@example.com");
+
+        env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
+        let _ = fs::remove_file(&cache_path);
+        if let Some(path) = original_cache {
+            env::set_var("ZITADEL_TUI_TOKEN_CACHE", path);
+        }
     }
 }

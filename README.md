@@ -153,6 +153,16 @@ Example: `zitadel-tui --once apps create --name grafana --redirect-uris https://
 `--template <TEMPLATE>`
 : Create the app from a named entry in `apps_config_file`.
 
+`apps create-native`
+: Create a native OIDC application. With `--device-code`, the CLI configures JWT access tokens so the app can be used for `auth login`.
+Example: `zitadel-tui --once apps create-native --name zitadel-tui --device-code`
+
+`--name <NAME>`
+: Display name for the native application.
+
+`--device-code`
+: Enable the Device Code grant for CLI login sessions. This also switches the generated client to JWT access tokens.
+
 `apps delete`
 : Delete an application by Zitadel app ID.
 Example: `zitadel-tui --once apps delete --app-id 123456789012345678`
@@ -244,7 +254,8 @@ Example: `zitadel-tui --once idps configure-google --client-id google-client-id 
 : Authenticate via the OAuth 2.0 Device Authorization Grant. Prints a URL and
 short code, waits for browser approval, then saves the access and refresh tokens
 to `~/.config/zitadel-tui/tokens.json`. Requires a Zitadel native app with the
-Device Code grant enabled.
+Device Code grant enabled and JWT access tokens configured for API access.
+The `apps create-native --device-code` path is intended for CLI login sessions.
 Example: `zitadel-tui --once --host https://zitadel.example.com auth login --client-id <CLIENT_ID>`
 
 `--client-id <CLIENT_ID>`
@@ -258,8 +269,8 @@ credentials or a new `auth login`.
 Example: `zitadel-tui --once auth logout`
 
 `auth status`
-: Resolve credentials, authenticate, and report the active auth source and
-project count. Works with any credential source including a cached session token.
+: Resolve credentials, authenticate, and report the active auth source plus the
+current user identity. Works with any credential source including a cached session token.
 Example: `zitadel-tui --once --json auth status`
 
 #### `config`
@@ -330,7 +341,7 @@ Authentication is resolved in this order:
 ### OAuth Device Flow (recommended for interactive use)
 
 Register a native app in your Zitadel instance with the **Device Code** grant
-type enabled, then log in once:
+type enabled and JWT access tokens enabled, then log in once:
 
 ```bash
 zitadel-tui --once --host https://zitadel.example.com auth login --client-id <CLIENT_ID>

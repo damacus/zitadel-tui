@@ -43,6 +43,7 @@ pub enum Command {
 pub enum AppsAction {
     List,
     Create(CreateAppArgs),
+    CreateNative(CreateNativeAppArgs),
     Delete(DeleteAppArgs),
     RegenerateSecret(RegenerateSecretArgs),
     QuickSetup(QuickSetupAppsArgs),
@@ -121,6 +122,16 @@ pub struct CreateAppArgs {
     pub public: bool,
     #[arg(long)]
     pub template: Option<String>,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct CreateNativeAppArgs {
+    /// Display name for the native application.
+    #[arg(long)]
+    pub name: String,
+    /// Enable the Device Code grant and JWT access tokens for CLI login sessions.
+    #[arg(long)]
+    pub device_code: bool,
 }
 
 #[derive(clap::Args, Debug, Clone)]

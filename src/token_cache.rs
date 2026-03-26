@@ -67,10 +67,23 @@ impl TokenCache {
         if let Ok(p) = std::env::var("ZITADEL_TUI_TOKEN_CACHE") {
             return Ok(PathBuf::from(p));
         }
-        dirs::config_dir()
-            .map(|d| d.join("zitadel-tui").join("tokens.json"))
-            .context("could not determine config directory")
+        token_cache_default_path()
     }
+}
+
+#[cfg(test)]
+fn token_cache_default_path() -> Result<PathBuf> {
+    Ok(std::env::temp_dir().join(format!(
+        "zitadel-tui-test-default-tokens-{}.json",
+        std::process::id()
+    )))
+}
+
+#[cfg(not(test))]
+fn token_cache_default_path() -> Result<PathBuf> {
+    dirs::config_dir()
+        .map(|d| d.join("zitadel-tui").join("tokens.json"))
+        .context("could not determine config directory")
 }
 
 #[cfg(unix)]

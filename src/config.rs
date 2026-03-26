@@ -210,16 +210,8 @@ mod tests {
     use std::{
         env, fs,
         path::{Path, PathBuf},
-        sync::{Mutex, OnceLock},
         time::{SystemTime, UNIX_EPOCH},
     };
-
-    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -294,7 +286,7 @@ mod tests {
 
     #[test]
     fn load_uses_xdg_config_only() {
-        let _guard = test_lock();
+        let _guard = crate::test_support::env_lock();
         let cwd_config = temp_dir("cwd").join("config.toml");
         let xdg_config = temp_dir("xdg").join("config.toml");
 
@@ -314,7 +306,7 @@ mod tests {
 
     #[test]
     fn save_writes_secret_config_with_restricted_permissions() {
-        let _guard = test_lock();
+        let _guard = crate::test_support::env_lock();
         let path = temp_dir("save").join("config.toml");
         let config = AppConfig {
             zitadel_url: Some("https://zitadel.example.com".to_string()),
