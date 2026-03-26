@@ -159,23 +159,9 @@ impl App {
         let setup_required = bootstrap.setup_required;
         let templates_path = bootstrap.templates_path.clone();
         let canvas_bootstrap = bootstrap.clone();
-        let app_records = if bootstrap.app_records.is_empty() {
-            sample_app_records()
-        } else {
-            bootstrap.app_records
-        };
-
-        let user_records = if bootstrap.user_records.is_empty() {
-            sample_user_records()
-        } else {
-            bootstrap.user_records
-        };
-
-        let idp_records = if bootstrap.idp_records.is_empty() {
-            sample_idp_records()
-        } else {
-            bootstrap.idp_records
-        };
+        let app_records = bootstrap.app_records;
+        let user_records = bootstrap.user_records;
+        let idp_records = bootstrap.idp_records;
 
         let canvas_mode = if setup_required {
             CanvasMode::Setup(default_setup_form(&canvas_bootstrap))
@@ -242,21 +228,9 @@ impl App {
         self.auth_label = bootstrap.auth_label;
         self.templates_path = bootstrap.templates_path;
         self.setup_required = bootstrap.setup_required;
-        self.app_records = if bootstrap.app_records.is_empty() {
-            sample_app_records()
-        } else {
-            bootstrap.app_records
-        };
-        self.user_records = if bootstrap.user_records.is_empty() {
-            sample_user_records()
-        } else {
-            bootstrap.user_records
-        };
-        self.idp_records = if bootstrap.idp_records.is_empty() {
-            sample_idp_records()
-        } else {
-            bootstrap.idp_records
-        };
+        self.app_records = bootstrap.app_records;
+        self.user_records = bootstrap.user_records;
+        self.idp_records = bootstrap.idp_records;
         self.selected_record = 0;
         self.selected_action = 0;
         self.resources[0].count = self.app_records.len().to_string();
@@ -332,9 +306,6 @@ impl App {
         self.selected_action = 0;
         self.selected_record = 0;
         self.focus = Focus::Resources;
-        if matches!(self.canvas_mode, CanvasMode::Browse) {
-            self.canvas_mode = CanvasMode::Browse;
-        }
     }
 
     pub fn previous_resource(&mut self) {
@@ -346,9 +317,6 @@ impl App {
         self.selected_action = 0;
         self.selected_record = 0;
         self.focus = Focus::Resources;
-        if matches!(self.canvas_mode, CanvasMode::Browse) {
-            self.canvas_mode = CanvasMode::Browse;
-        }
     }
 
     pub fn next_action(&mut self) {
@@ -1320,67 +1288,6 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         .split(popup[1])[1]
 }
 
-pub fn sample_app_records() -> Vec<Record> {
-    vec![
-        Record {
-            id: "app-1".to_string(),
-            name: "grafana-main".to_string(),
-            kind: "confidential".to_string(),
-            summary: "2 redirects".to_string(),
-            detail: "client grafana-main".to_string(),
-            changed_at: "active".to_string(),
-        },
-        Record {
-            id: "app-2".to_string(),
-            name: "paperless".to_string(),
-            kind: "confidential".to_string(),
-            summary: "3 redirects".to_string(),
-            detail: "client paperless".to_string(),
-            changed_at: "active".to_string(),
-        },
-        Record {
-            id: "app-3".to_string(),
-            name: "mealie-web".to_string(),
-            kind: "public".to_string(),
-            summary: "2 redirects".to_string(),
-            detail: "client mealie-web".to_string(),
-            changed_at: "active".to_string(),
-        },
-    ]
-}
-
-pub fn sample_user_records() -> Vec<Record> {
-    vec![
-        Record {
-            id: "user-1".to_string(),
-            name: "alice@example.com".to_string(),
-            kind: "active".to_string(),
-            summary: "alice@example.com".to_string(),
-            detail: "Alice Example".to_string(),
-            changed_at: "human user".to_string(),
-        },
-        Record {
-            id: "user-2".to_string(),
-            name: "admin".to_string(),
-            kind: "active".to_string(),
-            summary: "admin@example.com".to_string(),
-            detail: "Admin User".to_string(),
-            changed_at: "IAM owner".to_string(),
-        },
-    ]
-}
-
-pub fn sample_idp_records() -> Vec<Record> {
-    vec![Record {
-        id: "idp-1".to_string(),
-        name: "Google".to_string(),
-        kind: "active".to_string(),
-        summary: "google".to_string(),
-        detail: "openid profile email".to_string(),
-        changed_at: "configured".to_string(),
-    }]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1432,6 +1339,57 @@ mod tests {
     }
 
     #[test]
+    fn focus_cycles_backward() {
+        let mut app = test_app();
+        app.reverse_focus();
+        assert_eq!(app.focus, Focus::Records);
+        app.reverse_focus();
+        assert_eq!(app.focus, Focus::Form);
+        app.reverse_focus();
+        assert_eq!(app.focus, Focus::Actions);
+    }
+
+    #[test]
+    fn resource_navigation_wraps_and_resets_selection() {
+        let mut app = test_app();
+        app.selected_action = 2;
+        app.selected_record = 1;
+
+        app.next_resource();
+        assert_eq!(app.active_resource(), ResourceKind::Users);
+        assert_eq!(app.selected_action, 0);
+        assert_eq!(app.selected_record, 0);
+
+        app.previous_resource();
+        assert_eq!(app.active_resource(), ResourceKind::Applications);
+        assert_eq!(app.selected_action, 0);
+        assert_eq!(app.selected_record, 0);
+    }
+
+    #[test]
+    fn empty_bootstrap_keeps_empty_records() {
+        let app = App::from_bootstrap(TuiBootstrap {
+            host: "https://zitadel.example.com".to_string(),
+            project: "core".to_string(),
+            auth_label: "PAT".to_string(),
+            templates_path: None,
+            setup_required: false,
+            app_records: vec![],
+            user_records: vec![],
+            idp_records: vec![],
+        });
+
+        assert!(app.app_records.is_empty());
+        assert!(app.user_records.is_empty());
+        assert!(app.idp_records.is_empty());
+        assert_eq!(app.resources[0].count, "0");
+        assert_eq!(app.resources[1].count, "0");
+        assert_eq!(app.resources[2].count, "0");
+        assert!(matches!(app.canvas_mode, CanvasMode::Browse));
+        assert!(app.selected_record().is_none());
+    }
+
+    #[test]
     fn setup_mode_uses_setup_form() {
         let app = App::from_bootstrap(TuiBootstrap {
             host: "https://zitadel.example.com".to_string(),
@@ -1467,5 +1425,107 @@ mod tests {
             panic!("expected setup mode");
         };
         assert_eq!(form.fields[3].value, "x");
+    }
+
+    #[test]
+    fn form_toggle_and_choice_cycle() {
+        let mut app = test_app();
+        let mut form = default_setup_form(&TuiBootstrap {
+            host: "https://zitadel.example.com".to_string(),
+            project: "core".to_string(),
+            auth_label: "PAT".to_string(),
+            templates_path: None,
+            setup_required: true,
+            app_records: vec![],
+            user_records: vec![],
+            idp_records: vec![],
+        });
+
+        form.selected_field = 2;
+        app.set_canvas_mode(CanvasMode::Setup(form));
+        app.form_toggle_or_cycle(true);
+        let CanvasMode::Setup(form) = &app.canvas_mode else {
+            panic!("expected setup mode");
+        };
+        assert_eq!(form.fields[2].value, "Service account");
+
+        app.form_toggle_or_cycle(true);
+        let CanvasMode::Setup(form) = &app.canvas_mode else {
+            panic!("expected setup mode");
+        };
+        assert_eq!(form.fields[2].value, "OAuth device (placeholder)");
+
+        app.form_toggle_or_cycle(false);
+        let CanvasMode::Setup(form) = &app.canvas_mode else {
+            panic!("expected setup mode");
+        };
+        assert_eq!(form.fields[2].value, "Service account");
+    }
+
+    #[test]
+    fn reset_to_browse_returns_to_setup_when_required() {
+        let mut app = App::from_bootstrap(TuiBootstrap {
+            host: "https://zitadel.example.com".to_string(),
+            project: "core".to_string(),
+            auth_label: "Setup required".to_string(),
+            templates_path: Some("/tmp/apps.yml".to_string()),
+            setup_required: true,
+            app_records: vec![],
+            user_records: vec![],
+            idp_records: vec![],
+        });
+
+        app.reset_to_browse();
+        assert!(matches!(app.canvas_mode, CanvasMode::Setup(_)));
+        assert_eq!(app.focus, Focus::Resources);
+    }
+
+    #[test]
+    fn reset_to_browse_returns_to_browser_when_ready() {
+        let mut app = test_app();
+        app.reset_to_browse();
+        assert!(matches!(app.canvas_mode, CanvasMode::Browse));
+        assert_eq!(app.focus, Focus::Resources);
+    }
+
+    #[test]
+    fn sync_runtime_updates_counts_without_fallback_records() {
+        let mut app = test_app();
+        app.selected_record = 1;
+        app.selected_action = 2;
+
+        app.sync_runtime(TuiBootstrap {
+            host: "https://zitadel.example.com".to_string(),
+            project: "ops".to_string(),
+            auth_label: "Service account".to_string(),
+            templates_path: None,
+            setup_required: true,
+            app_records: vec![],
+            user_records: vec![],
+            idp_records: vec![],
+        });
+
+        assert_eq!(app.project, "ops");
+        assert_eq!(app.auth_label, "Service account");
+        assert_eq!(app.resources[0].count, "0");
+        assert_eq!(app.resources[1].count, "0");
+        assert_eq!(app.resources[2].count, "0");
+        assert_eq!(app.resources[3].count, "setup");
+        assert!(app.app_records.is_empty());
+        assert!(app.user_records.is_empty());
+        assert!(app.idp_records.is_empty());
+        assert_eq!(app.selected_record, 0);
+        assert_eq!(app.selected_action, 0);
+    }
+
+    #[test]
+    fn record_navigation_wraps_even_when_empty() {
+        let mut app = test_app();
+        app.next_record();
+        assert_eq!(app.focus, Focus::Records);
+        assert_eq!(app.selected_record, 0);
+        app.previous_record();
+        assert_eq!(app.focus, Focus::Records);
+        assert_eq!(app.selected_record, 0);
     }
 }
