@@ -234,6 +234,12 @@ impl ZitadelClient {
         let status = response.status();
         let bytes = response.bytes().await?;
         if !status.is_success() {
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                bail!(
+                    "Authentication failed (401 Unauthorized). \
+                     Check your credentials or run `auth login` to authenticate."
+                );
+            }
             bail!("API request failed ({status})");
         }
 
