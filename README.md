@@ -1,82 +1,131 @@
 # Zitadel TUI
 
-A beautiful, interactive terminal user interface for managing Zitadel identity
-provider configuration.
+A Rust terminal UI and headless CLI for managing Zitadel applications, users,
+identity providers, and runtime configuration.
+
+## Status
+
+The Rust migration is in progress and is now the primary implementation path.
+
+Implemented today:
+- Cargo-based crate, build, lint, and test flow
+- Headless commands for apps, users, IDPs, auth validation, and config
+- Token and direct service-account authentication with no Kubernetes dependency
+- Legacy Ruby YAML config import into canonical Rust TOML config
+- `Command Atelier` TUI shell with resource workspace switching and popup inspector
+- GitHub Actions release wiring for binaries, Docker images, and `crates.io`
+
+Still in progress:
+- full interactive mutation flows inside the TUI
+- OAuth device flow
+- final removal of the legacy Ruby runtime
 
 ## Features
 
-- **OIDC Application Management**
-  - List all applications
-  - Create new applications (with predefined templates or custom)
-  - Regenerate client secrets
-  - Delete applications
-  - Quick setup using YAML-configured app templates
+- **Applications**
+  - list OIDC applications
+  - create applications from flags or templates
+  - delete applications
+  - regenerate confidential client secrets
+  - quick setup from templates YAML
 
-- **User Management**
-  - List all users
-  - Create new users
-  - Create admin users with password authentication
-  - Grant IAM_OWNER role
+- **Users**
+  - list users
+  - create human users
+  - create imported local admin users
+  - grant `IAM_OWNER`
+  - quick setup from templates YAML
 
-- **Identity Provider Configuration**
-  - List configured IDPs
-  - Configure Google OAuth IDP
-  - Fetch credentials from Kubernetes secrets
+- **Identity Providers**
+  - list IDPs
+  - configure Google manually
 
-## Requirements
-
-- Ruby >= 3.1
-- kubectl configured with cluster access (for fetching secrets)
+- **Configuration and Auth**
+  - TOML config in XDG config space
+  - legacy `~/.zitadel-tui.yml` import
+  - auth precedence `CLI > env > config > setup`
+  - PAT and direct service-account file support
 
 ## Installation
+
+### Build locally
 
 ```bash
 git clone https://github.com/damacus/zitadel-tui.git
 cd zitadel-tui
-bundle install
+cargo build --release
+```
+
+Run the binary:
+
+```bash
+./target/release/zitadel-tui
+```
+
+### Install from `crates.io`
+
+```bash
+cargo install zitadel-tui
 ```
 
 ## Usage
 
-```bash
-# Run the TUI
-./bin/zitadel-tui
+### Interactive TUI
 
-# Or with bundle
-bundle exec ./bin/zitadel-tui
+```bash
+zitadel-tui
 ```
 
-On first run, you'll be prompted to configure your Zitadel URL.
+### Headless mode
 
-## Docker
+Non-interactive commands require `--once`. Use `--json` for machine-readable
+output.
 
 ```bash
-# Pull from GitHub Container Registry
-docker pull ghcr.io/damacus/zitadel-tui:latest
-
-# Run with kubectl access
-docker run -it --rm \
-  -v ~/.kube:/root/.kube:ro \
-  -v ~/.zitadel-tui.yml:/root/.zitadel-tui.yml \
-  ghcr.io/damacus/zitadel-tui:latest
+zitadel-tui --once apps list
+zitadel-tui --once --json auth validate
+zitadel-tui --once apps create --name grafana --redirect-uris https://grafana.example.com/login/generic_oauth
+zitadel-tui --once users create-admin \
+  --username admin \
+  --first-name Admin \
+  --last-name User \
+  --email admin@example.com \
+  --password 'change-me-now'
+zitadel-tui --once idps configure-google \
+  --client-id google-client-id \
+  --client-secret google-client-secret
 ```
 
 ## Configuration
 
-The TUI stores configuration in `~/.zitadel-tui.yml`:
+Canonical config lives at:
 
-```yaml
-zitadel_url: https://zitadel.example.com
-project_id: "123456789"
-apps_config_file: /path/to/apps.yml
+```text
+~/.config/zitadel-tui/config.toml
 ```
 
-### Apps and Users Configuration
+Example:
 
-Define your OIDC applications and predefined users in a YAML file:
+```toml
+zitadel_url = "https://zitadel.example.com"
+project_id = "123456789"
+apps_config_file = "/path/to/apps.yml"
+pat = "zitadel-pat"
+service_account_file = "/path/to/service-account.json"
+```
+
+Legacy import:
+
+```bash
+zitadel-tui --once config import-legacy
+```
+
+## Templates File
+
+The apps/users templates file remains YAML for compatibility during the
+migration.
 
 ```yaml
-# OIDC Applications
 apps:
   grafana:
     redirect_uris:
@@ -90,12 +139,11 @@ apps:
       - https://mealie.example.com/api/auth/oauth/callback
     public: true
 
-# Predefined Users
 users:
   - email: admin@example.com
     first_name: Admin
     last_name: User
-    admin: true  # Will be granted IAM_OWNER role
+    admin: true
 
   - email: user@example.com
     first_name: Regular
@@ -103,38 +151,50 @@ users:
     admin: false
 ```
 
-See `apps.yml.example` for more examples.
-
 ## Authentication
 
-The TUI supports two authentication methods:
+Supported today:
 
-1. **Service Account (JWT)** - Uses a service account key from Kubernetes
-   secret `zitadel-admin-sa` in namespace `authentication`
+1. `--token`, `ZITADEL_TOKEN`, or `pat` in config
+2. `--service-account-file`, `ZITADEL_SERVICE_ACCOUNT_FILE`, or
+   `service_account_file` in config
 
-2. **Personal Access Token (PAT)** - Uses a PAT from Kubernetes secret
-   `zitadel-admin-sa-pat` in namespace `authentication`
+Not supported anymore:
+
+- Kubernetes secret lookup
+- `kubectl`-backed auth bootstrap
+
+Planned next:
+
+- OAuth device flow with persisted session material
+
+## Docker
+
+```bash
+docker build -t zitadel-tui .
+docker run -it --rm \
+  -v ~/.config/zitadel-tui:/root/.config/zitadel-tui:ro \
+  zitadel-tui
+```
 
 ## Development
 
 ```bash
-# Install dependencies
-bundle install
-
-# Run RuboCop
-bundle exec rubocop
-
-# Run tests
-bundle exec rspec
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo check
 ```
 
-## Contributing
+## Release
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
+The release workflow is tag-driven through `release-please` and publishes:
+
+- GitHub release artifacts
+- GHCR container images
+- the Rust crate to `crates.io`
+
+The publish job expects `CARGO_REGISTRY_TOKEN` in GitHub Actions secrets.
 
 ## License
 

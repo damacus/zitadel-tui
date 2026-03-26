@@ -1,0 +1,28 @@
+[package]
+name = "zitadel-tui"
+version = "0.1.0"
+edition = "2021"
+description = "A terminal UI for managing Zitadel resources"
+license = "MIT"
+repository = "https://github.com/damacus/zitadel-tui"
+homepage = "https://github.com/damacus/zitadel-tui"
+keywords = ["zitadel", "tui", "terminal", "oauth", "identity"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive", "env"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+dirs = "6.0"
+jsonwebtoken = "9.3"
+ratatui = "0.30"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+rpassword = "7.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread"] }
+toml = "0.9"
+
+[dev-dependencies]
+mockito = "1.7"

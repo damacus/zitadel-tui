@@ -1,38 +1,22 @@
-FROM ruby:4.0-alpine
+FROM rust:1.89-alpine AS builder
 
-# Install dependencies
 RUN apk add --no-cache \
     build-base \
-    curl \
-    bash \
-    git
+    musl-dev
 
-# Install kubectl (auto-detect architecture)
-RUN ARCH=$(uname -m) && \
-    case "$ARCH" in \
-    x86_64) KUBECTL_ARCH="amd64" ;; \
-    aarch64) KUBECTL_ARCH="arm64" ;; \
-    *) echo "Unsupported architecture: $ARCH" && exit 1 ;; \
-    esac && \
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${KUBECTL_ARCH}/kubectl" && \
-    chmod +x kubectl && \
-    mv kubectl /usr/local/bin/
-
-# Set working directory
 WORKDIR /app
 
-# Copy Gemfile first for layer caching
-COPY Gemfile Gemfile.lock* ./
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 
-# Install gems
-RUN bundle config set --local without 'development test' && \
-    bundle install --jobs 4 --retry 3
+RUN cargo build --release
 
-# Copy application code
-COPY . .
+FROM alpine:3.22
 
-# Make binary executable
-RUN chmod +x bin/zitadel-tui
+RUN apk add --no-cache ca-certificates
 
-# Set entrypoint
-ENTRYPOINT ["./bin/zitadel-tui"]
+WORKDIR /app
+
+COPY --from=builder /app/target/release/zitadel-tui /usr/local/bin/zitadel-tui
+
+ENTRYPOINT ["zitadel-tui"]

@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zitadel TUI Layout Sketches</title>
+    <style>
+      :root {
+        --bg: #f2ede3;
+        --paper: rgba(255, 251, 245, 0.82);
+        --ink: #17130f;
+        --muted: #6e645a;
+        --line: rgba(23, 19, 15, 0.12);
+        --accent-a: #1f7a72;
+        --accent-b: #d86c3d;
+        --accent-c: #2032a7;
+        --shadow: 0 24px 80px rgba(28, 18, 9, 0.18);
+        --radius-xl: 28px;
+        --radius-lg: 18px;
+        --radius-md: 12px;
+        --mono: "Cascadia Code", "SFMono-Regular", "Menlo", monospace;
+        --display: "Avenir Next Condensed", "Franklin Gothic Medium",
+          "Arial Narrow", sans-serif;
+        --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua",
+          serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        font-family: var(--serif);
+        background:
+          radial-gradient(circle at top left, rgba(216, 108, 61, 0.18), transparent 34%),
+          radial-gradient(circle at top right, rgba(32, 50, 167, 0.12), transparent 30%),
+          linear-gradient(180deg, #f7f1e6 0%, #ece2d1 100%);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(23, 19, 15, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(23, 19, 15, 0.04) 1px, transparent 1px);
+        background-size: 26px 26px;
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 96%);
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        width: min(1380px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 42px 0 80px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+        gap: 28px;
+        align-items: start;
+        margin-bottom: 28px;
+      }
+
+      .hero-card,
+      .legend,
+      .concept {
+        background: var(--paper);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        box-shadow: var(--shadow);
+      }
+
+      .hero-card {
+        border-radius: var(--radius-xl);
+        padding: 34px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: rgba(31, 122, 114, 0.1);
+        color: var(--accent-a);
+        font: 600 13px/1 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 18px 0 10px;
+        font-family: var(--display);
+        font-size: clamp(2.7rem, 7vw, 5.8rem);
+        line-height: 0.9;
+        letter-spacing: -0.04em;
+        text-transform: uppercase;
+      }
+
+      .hero p {
+        margin: 0;
+        max-width: 58ch;
+        color: var(--muted);
+        font-size: 1.06rem;
+        line-height: 1.7;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      .jump {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        border-radius: 999px;
+        border: 1px solid rgba(23, 19, 15, 0.12);
+        background: rgba(255, 255, 255, 0.65);
+        text-decoration: none;
+        font: 600 14px/1 var(--mono);
+        transition: transform 180ms ease, background-color 180ms ease;
+      }
+
+      .jump:hover {
+        transform: translateY(-2px);
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .legend {
+        border-radius: var(--radius-xl);
+        padding: 26px;
+      }
+
+      .legend h2 {
+        margin: 0 0 16px;
+        font-family: var(--display);
+        font-size: 1.4rem;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .legend ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 14px;
+      }
+
+      .legend li {
+        display: grid;
+        gap: 4px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .legend li:last-child {
+        padding-bottom: 0;
+        border-bottom: 0;
+      }
+
+      .legend strong {
+        font: 700 13px/1.2 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .legend span {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .concepts {
+        display: grid;
+        gap: 34px;
+      }
+
+      .concept {
+        border-radius: 34px;
+        padding: 28px;
+      }
+
+      .concept-head {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: end;
+        gap: 18px;
+        margin-bottom: 22px;
+      }
+
+      .concept-label {
+        color: var(--muted);
+        font: 600 13px/1 var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .concept h3 {
+        margin: 10px 0 8px;
+        font-family: var(--display);
+        font-size: clamp(2rem, 4vw, 3rem);
+        line-height: 0.95;
+        text-transform: uppercase;
+      }
+
+      .concept-copy {
+        max-width: 60ch;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .tag {
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.55);
+        font: 600 12px/1 var(--mono);
+      }
+
+      .terminal {
+        position: relative;
+        overflow: hidden;
+        border-radius: 24px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+
+      .terminal::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 22%);
+      }
+
+      .terminal-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 18px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        font: 600 13px/1 var(--mono);
+      }
+
+      .traffic {
+        display: flex;
+        gap: 8px;
+      }
+
+      .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+      }
+
+      .dot.red { background: #ff6f61; }
+      .dot.yellow { background: #f3c65f; }
+      .dot.green { background: #49d77a; }
+
+      .top-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        align-items: center;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .light {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+
+      .light.ok { background: #6ce58e; }
+      .light.warn { background: #f6a04d; }
+      .light.info { background: #6ea4ff; }
+
+      .terminal-body {
+        padding: 18px;
+      }
+
+      .concept-grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .panel {
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 16px;
+        min-height: 120px;
+      }
+
+      .panel-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 14px;
+        color: rgba(255, 255, 255, 0.76);
+        font: 700 12px/1 var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .muted {
+        opacity: 0.68;
+      }
+
+      .menu-list,
+      .record-list,
+      .action-list,
+      .detail-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 10px;
+        font-family: var(--mono);
+      }
+
+      .menu-list li,
+      .record-list li,
+      .action-list li,
+      .detail-list li {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .record-list li,
+      .action-list li,
+      .menu-list li {
+        padding: 10px 12px;
+        border-radius: 12px;
+      }
+
+      .table {
+        display: grid;
+        gap: 8px;
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .row {
+        display: grid;
+        gap: 14px;
+        align-items: center;
+      }
+
+      .row.header {
+        color: rgba(255, 255, 255, 0.58);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 11px;
+      }
+
+      .row.body {
+        padding: 10px 12px;
+        border-radius: 12px;
+      }
+
+      .statusline {
+        margin-top: 16px;
+        padding: 14px 18px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.62);
+        font: 600 12px/1.4 var(--mono);
+      }
+
+      .kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font: 700 11px/1 var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .kicker::before {
+        content: "";
+        width: 28px;
+        height: 1px;
+        background: currentColor;
+      }
+
+      .matrix {
+        color: #dce6ff;
+        background:
+          radial-gradient(circle at top left, rgba(72, 146, 255, 0.12), transparent 32%),
+          linear-gradient(180deg, #07111b 0%, #091f2a 100%);
+      }
+
+      .matrix .record-list li.selected,
+      .matrix .row.body.selected,
+      .matrix .menu-list li.selected,
+      .matrix .action-list li.primary {
+        background: rgba(111, 186, 255, 0.18);
+        box-shadow: inset 0 0 0 1px rgba(111, 186, 255, 0.28);
+      }
+
+      .matrix .panel {
+        background: rgba(8, 24, 34, 0.72);
+      }
+
+      .matrix .concept-grid {
+        grid-template-columns: 270px minmax(0, 1.45fr) 300px;
+      }
+
+      .matrix .row {
+        grid-template-columns: 1.4fr 1fr 1.1fr 0.8fr;
+      }
+
+      .atelier {
+        color: #f7f0e7;
+        background:
+          radial-gradient(circle at bottom right, rgba(216, 108, 61, 0.22), transparent 26%),
+          linear-gradient(135deg, #1a1410 0%, #302319 46%, #1f1914 100%);
+      }
+
+      .atelier .panel {
+        background: rgba(255, 248, 239, 0.05);
+      }
+
+      .atelier .concept-grid {
+        grid-template-columns: 320px minmax(0, 1fr);
+      }
+
+      .atelier .content-stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .atelier .canvas {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) 250px;
+        gap: 16px;
+      }
+
+      .atelier .selected {
+        background: rgba(255, 182, 138, 0.14);
+        box-shadow: inset 0 0 0 1px rgba(255, 182, 138, 0.22);
+      }
+
+      .ledger {
+        color: #e9f6e8;
+        background:
+          radial-gradient(circle at top right, rgba(91, 185, 116, 0.2), transparent 28%),
+          linear-gradient(180deg, #101811 0%, #142419 100%);
+      }
+
+      .ledger .panel {
+        background: rgba(7, 14, 8, 0.46);
+      }
+
+      .ledger .concept-grid {
+        grid-template-columns: 250px minmax(0, 1fr);
+      }
+
+      .ledger .workspace {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 16px;
+      }
+
+      .ledger .row {
+        grid-template-columns: 1.5fr 0.9fr 1.1fr 0.7fr;
+      }
+
+      .hybrid {
+        color: #eef3ff;
+        background:
+          radial-gradient(circle at top left, rgba(94, 157, 255, 0.18), transparent 30%),
+          radial-gradient(circle at bottom right, rgba(232, 120, 71, 0.16), transparent 24%),
+          linear-gradient(140deg, #11141d 0%, #1b2432 46%, #241b19 100%);
+      }
+
+      .hybrid .panel {
+        background: rgba(12, 18, 29, 0.62);
+      }
+
+      .hybrid .concept-grid {
+        grid-template-columns: 260px minmax(0, 1fr);
+      }
+
+      .hybrid .canvas-stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .hybrid .workbench {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) 240px;
+        gap: 16px;
+      }
+
+      .hybrid .selected,
+      .hybrid .primary {
+        background: rgba(117, 168, 255, 0.18);
+        box-shadow: inset 0 0 0 1px rgba(117, 168, 255, 0.26);
+      }
+
+      .hybrid .popup-anchor {
+        position: relative;
+      }
+
+      .hybrid .popup {
+        position: absolute;
+        right: 28px;
+        top: 34px;
+        width: min(320px, calc(100% - 40px));
+        padding: 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(9, 13, 22, 0.92);
+        box-shadow:
+          0 20px 50px rgba(0, 0, 0, 0.35),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(18px);
+      }
+
+      .hybrid .popup .panel-title {
+        margin-bottom: 12px;
+      }
+
+      .hybrid .popup-note {
+        margin-top: 14px;
+        color: rgba(255, 255, 255, 0.7);
+        font-family: var(--mono);
+        line-height: 1.7;
+      }
+
+      .note {
+        margin-top: 18px;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .decision {
+        margin-top: 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.62);
+        font: 700 12px/1 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      @media (max-width: 1160px) {
+        .hero {
+          grid-template-columns: 1fr;
+        }
+
+        .matrix .concept-grid,
+        .atelier .concept-grid,
+        .ledger .concept-grid,
+        .hybrid .concept-grid,
+        .atelier .canvas,
+        .ledger .workspace,
+        .hybrid .workbench {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 820px) {
+        .page {
+          width: min(100vw - 20px, 1380px);
+          padding-top: 20px;
+        }
+
+        .hero-card,
+        .legend,
+        .concept {
+          border-radius: 22px;
+        }
+
+        .terminal-body,
+        .concept,
+        .hero-card,
+        .legend {
+          padding: 18px;
+        }
+
+        .row,
+        .matrix .row,
+        .ledger .row {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <article class="hero-card">
+          <div class="eyebrow">Zitadel TUI migration sketches</div>
+          <h1>Three non-tabbed directions.</h1>
+          <p>
+            Each concept keeps the same Ratatui-friendly shell discipline from
+            <code>tui-expert</code>, but avoids the GitLab-style tab dashboard.
+            These are operator-first layouts: stable regions, strong focus, and
+            room for secrets, warnings, and deliberate admin actions.
+          </p>
+          <div class="hero-actions">
+            <a class="jump" href="#concept-a">01 Control Matrix</a>
+            <a class="jump" href="#concept-b">02 Atelier Workspace</a>
+            <a class="jump" href="#concept-c">03 Ledger Explorer</a>
+            <a class="jump" href="#concept-d">04 Hybrid Direction</a>
+          </div>
+        </article>
+
+        <aside class="legend">
+          <h2>How to evaluate</h2>
+          <ul>
+            <li>
+              <strong>Navigation weight</strong>
+              <span>How much screen real estate is dedicated to moving between tasks and resources.</span>
+            </li>
+            <li>
+              <strong>Mutation safety</strong>
+              <span>Whether destructive or credential-heavy actions feel deliberate instead of twitchy.</span>
+            </li>
+            <li>
+              <strong>Terminal adaptability</strong>
+              <span>How cleanly the concept can collapse from a wide desktop terminal to a narrower shell.</span>
+            </li>
+            <li>
+              <strong>Headless mental model</strong>
+              <span>Whether the interactive layout aligns cleanly with the CLI command groups and JSON actions.</span>
+            </li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="concepts">
+        <article class="concept" id="concept-a">
+          <div class="concept-head">
+            <div>
+              <div class="concept-label">Concept 01</div>
+              <h3>Control Matrix</h3>
+              <p class="concept-copy">
+                A command browser with a sharp, technical feel. This is the most
+                direct replacement for prompt-by-prompt Ruby, but rendered as a
+                persistent workstation: command rail, results grid, and an
+                inspector for the selected object.
+              </p>
+            </div>
+            <div class="tags">
+              <span class="tag">Fast scanning</span>
+              <span class="tag">Operator-heavy</span>
+              <span class="tag">Strong headless fit</span>
+            </div>
+          </div>
+
+          <div class="terminal matrix">
+            <div class="terminal-top">
+              <div class="traffic">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <div class="top-meta">
+                <span>zitadel-tui</span>
+                <span class="pill"><span class="light ok"></span>PAT authenticated</span>
+                <span class="pill"><span class="light info"></span>project core-platform</span>
+              </div>
+            </div>
+
+            <div class="terminal-body">
+              <div class="concept-grid">
+                <section class="panel">
+                  <div class="panel-title">
+                    <span>Command rail</span>
+                    <span class="muted">[g] resource</span>
+                  </div>
+                  <ul class="menu-list">
+                    <li class="selected"><span>Applications</span><span>8</span></li>
+                    <li><span>Users</span><span>43</span></li>
+                    <li><span>Identity providers</span><span>2</span></li>
+                    <li><span>Auth</span><span>●</span></li>
+                    <li><span>Config</span><span>~</span></li>
+                  </ul>
+                  <div class="panel-title" style="margin-top: 18px;">
+                    <span>Actions</span>
+                    <span class="muted">[/] command</span>
+                  </div>
+                  <ul class="action-list">
+                    <li class="primary"><span>Create app</span><span>[n]</span></li>
+                    <li><span>Regenerate secret</span><span>[r]</span></li>
+                    <li><span>Delete selected</span><span>[d]</span></li>
+                    <li><span>Quick setup</span><span>[s]</span></li>
+                  </ul>
+                </section>
+
+                <section class="panel">
+                  <div class="panel-title">
+                    <span>Applications</span>
+                    <span class="muted">Filter: oauth</span>
+                  </div>
+                  <div class="table">
+                    <div class="row header">
+                      <span>Name</span>
+                      <span>Type</span>
+                      <span>Client ID</span>
+                      <span>State</span>
+                    </div>
+                    <div class="row body selected">
+                      <span>grafana-main</span>
+                      <span>confidential</span>
+                      <span>zt_72318</span>
+                      <span>active</span>
+                    </div>
+                    <div class="row body">
+                      <span>paperless</span>
+                      <span>confidential</span>
+                      <span>zt_39210</span>
+                      <span>active</span>
+                    </div>
+                    <div class="row body">
+                      <span>mealie-web</span>
+                      <span>public</span>
+                      <span>zt_12019</span>
+                      <span>active</span>
+                    </div>
+                    <div class="row body">
+                      <span>nextcloud</span>
+                      <span>confidential</span>
+                      <span>zt_90112</span>
+                      <span>inactive</span>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="panel">
+                  <div class="panel-title">
+                    <span>Inspector</span>
+                    <span class="muted">[Enter] open</span>
+                  </div>
+                  <ul class="detail-list">
+                    <li><span>Name</span><span>grafana-main</span></li>
+                    <li><span>Type</span><span>confidential</span></li>
+                    <li><span>Redirects</span><span>2 URIs</span></li>
+                    <li><span>Secret</span><span>hidden</span></li>
+                    <li><span>Updated</span><span>09:41 UTC</span></li>
+                  </ul>
+                  <div class="panel-title" style="margin-top: 18px;">
+                    <span>Warnings</span>
+                    <span class="muted">⚠</span>
+                  </div>
+                  <div class="muted" style="font-family: var(--mono); line-height: 1.7;">
+                    Regenerating the secret invalidates existing OAuth clients immediately.
+                  </div>
+                </section>
+              </div>
+
+              <div class="statusline">
+                Ready. 4 apps loaded. Headless equivalent:
+                <code>zitadel-tui --once --json apps list</code>
+              </div>
+            </div>
+          </div>
+
+          <p class="note">
+            Best if you want the strongest mapping between interactive actions
+            and CLI commands. Slight risk: it can feel a little stern if the
+            visual treatment is not softened.
+          </p>
+          <div class="decision">Best for explicit operator workflows</div>
+        </article>
+
+        <article class="concept" id="concept-b">
+          <div class="concept-head">
+            <div>
+              <div class="concept-label">Concept 02</div>
+              <h3>Atelier Workspace</h3>
+              <p class="concept-copy">
+                Less like a dashboard, more like a drafting table. Navigation is
+                compact and the center of gravity is the working canvas: a record,
+                a form, or a setup flow. It feels calmer and more premium than a
+                metrics-oriented shell.
+              </p>
+            </div>
+            <div class="tags">
+              <span class="tag">Form-friendly</span>
+              <span class="tag">Human-scale</span>
+              <span class="tag">Best setup UX</span>
+            </div>
+          </div>
+
+          <div class="terminal atelier">
+            <div class="terminal-top">
+              <div class="traffic">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <div class="top-meta">
+                <span>zitadel-tui / user import</span>
+                <span class="pill"><span class="light ok"></span>OAuth device session</span>
+                <span class="pill"><span class="light warn"></span>1 warning pending</span>
+              </div>
+            </div>
+
+            <div class="terminal-body">
+              <div class="concept-grid">
+                <section class="panel">
+                  <div class="panel-title">
+                    <span>Workbench</span>
+                    <span class="muted">[g] go</span>
+                  </div>
+                  <ul class="menu-list">
+                    <li><span>Overview</span><span>⌂</span></li>
+                    <li class="selected"><span>Users</span><span>43</span></li>
+                    <li><span>Applications</span><span>8</span></li>
+                    <li><span>IDPs</span><span>2</span></li>
+                    <li><span>Auth</span><span>✓</span></li>
+                    <li><span>Config</span><span>∴</span></li>
+                  </ul>
+                  <div class="panel-title" style="margin-top: 18px;">
+                    <span>Recent tasks</span>
+                    <span class="muted">last 4</span>
+                  </div>
+                  <ul class="record-list">
+                    <li><span>Create admin user</span><span>09:42</span></li>
+                    <li><span>Grant IAM_OWNER</span><span>09:31</span></li>
+                    <li><span>Validate PAT</span><span>09:18</span></li>
+                  </ul>
+                </section>
+
+                <div class="content-stack">
+                  <section class="panel">
+                    <div class="panel-title">
+                      <span>Canvas</span>
+                      <span class="muted">Create admin user</span>
+                    </div>
+                    <div class="canvas">
+                      <div class="panel" style="margin: 0; min-height: 0;">
+                        <div class="panel-title">
+                          <span>Form</span>
+                          <span class="muted">[Tab] next field</span>
+                        </div>
+                        <ul class="detail-list">
+                          <li><span>Username</span><span>admin.platform</span></li>
+                          <li><span>Email</span><span>admin@example.com</span></li>
+                          <li><span>Temporary password</span><span>••••••••••••</span></li>
+                          <li><span>Grant IAM_OWNER</span><span>true</span></li>
+                        </ul>
+                      </div>
+                      <div class="panel" style="margin: 0; min-height: 0;">
+                        <div class="panel-title">
+                          <span>Review</span>
+                          <span class="muted">before submit</span>
+                        </div>
+                        <div style="font-family: var(--mono); line-height: 1.7; color: rgba(255, 255, 255, 0.74);">
+                          Local admin account
+                          <br />
+                          Password change required
+                          <br />
+                          Console access enabled
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="panel">
+                    <div class="panel-title">
+                      <span>Selection drawer</span>
+                      <span class="muted">users</span>
+                    </div>
+                    <ul class="record-list">
+                      <li class="selected"><span>admin.platform</span><span>iam owner</span></li>
+                      <li><span>alice.ops</span><span>member</span></li>
+                      <li><span>sam.docs</span><span>member</span></li>
+                      <li><span>linda.dev</span><span>member</span></li>
+                    </ul>
+                  </section>
+                </div>
+              </div>
+
+              <div class="statusline">
+                Draft mode. Enter commits the form, Esc returns to the record list,
+                and JSON mode uses the same underlying command shape.
+              </div>
+            </div>
+          </div>
+
+          <p class="note">
+            Best if you care most about complex create/edit/setup flows feeling
+            composed and not mechanical. It is less bluntly “terminal admin”
+            and more crafted.
+          </p>
+          <div class="decision">Best for onboarding and mutation-heavy work</div>
+        </article>
+
+        <article class="concept" id="concept-c">
+          <div class="concept-head">
+            <div>
+              <div class="concept-label">Concept 03</div>
+              <h3>Ledger Explorer</h3>
+              <p class="concept-copy">
+                A sober, inventory-first layout. The left side groups resources
+                like sections in a ledger, while the right side turns into either
+                a list/detail explorer or a review board. This feels deliberate,
+                durable, and a little less flashy than the other two.
+              </p>
+            </div>
+            <div class="tags">
+              <span class="tag">Serious tone</span>
+              <span class="tag">High information density</span>
+              <span class="tag">Good narrow-screen collapse</span>
+            </div>
+          </div>
+
+          <div class="terminal ledger">
+            <div class="terminal-top">
+              <div class="traffic">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <div class="top-meta">
+                <span>zitadel-tui</span>
+                <span class="pill"><span class="light ok"></span>service account loaded</span>
+                <span class="pill"><span class="light info"></span>config imported</span>
+              </div>
+            </div>
+
+            <div class="terminal-body">
+              <div class="concept-grid">
+                <section class="panel">
+                  <div class="panel-title">
+                    <span>Sections</span>
+                    <span class="muted">[1-5]</span>
+                  </div>
+                  <ul class="menu-list">
+                    <li><span>Applications</span><span>08</span></li>
+                    <li class="selected"><span>Users</span><span>43</span></li>
+                    <li><span>IDPs</span><span>02</span></li>
+                    <li><span>Auth</span><span>03</span></li>
+                    <li><span>Config</span><span>01</span></li>
+                  </ul>
+                  <div class="panel-title" style="margin-top: 18px;">
+                    <span>Queue</span>
+                    <span class="muted">pending</span>
+                  </div>
+                  <ul class="record-list">
+                    <li><span>PAT revalidation</span><span>today</span></li>
+                    <li><span>3 imported users</span><span>review</span></li>
+                  </ul>
+                </section>
+
+                <div class="workspace">
+                  <section class="panel">
+                    <div class="panel-title">
+                      <span>User ledger</span>
+                      <span class="muted">sort: role</span>
+                    </div>
+                    <div class="table">
+                      <div class="row header">
+                        <span>User</span>
+                        <span>Role</span>
+                        <span>Email</span>
+                        <span>State</span>
+                      </div>
+                      <div class="row body selected">
+                        <span>admin.platform</span>
+                        <span>IAM_OWNER</span>
+                        <span>admin@example.com</span>
+                        <span>active</span>
+                      </div>
+                      <div class="row body">
+                        <span>alice.ops</span>
+                        <span>member</span>
+                        <span>alice@example.com</span>
+                        <span>active</span>
+                      </div>
+                      <div class="row body">
+                        <span>sam.docs</span>
+                        <span>member</span>
+                        <span>sam@example.com</span>
+                        <span>invited</span>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="panel">
+                    <div class="panel-title">
+                      <span>Action board</span>
+                      <span class="muted">selected user</span>
+                    </div>
+                    <ul class="detail-list">
+                      <li><span>Display name</span><span>Admin Platform</span></li>
+                      <li><span>Auth source</span><span>username/password</span></li>
+                      <li><span>Session policy</span><span>default</span></li>
+                      <li><span>Last login</span><span>08:59 UTC</span></li>
+                    </ul>
+                    <div class="panel-title" style="margin-top: 18px;">
+                      <span>Operations</span>
+                      <span class="muted">[a] add [g] grant</span>
+                    </div>
+                    <ul class="action-list">
+                      <li class="primary"><span>Grant IAM_OWNER</span><span>g</span></li>
+                      <li><span>Create admin user</span><span>a</span></li>
+                      <li><span>Export JSON</span><span>j</span></li>
+                    </ul>
+                  </section>
+                </div>
+              </div>
+
+              <div class="statusline">
+                Stable, quiet, and information-dense. Strong candidate if you want
+                the app to feel like a durable operator console rather than a flashy TUI.
+              </div>
+            </div>
+          </div>
+
+          <p class="note">
+            Best if you want the most restrained, long-lived visual language. It
+            is the least trendy of the three, which is arguably an advantage for
+            an admin tool.
+          </p>
+          <div class="decision">Best for a sober, durable admin console</div>
+        </article>
+
+        <article class="concept" id="concept-d">
+          <div class="concept-head">
+            <div>
+              <div class="concept-label">Concept 04</div>
+              <h3>Command Atelier</h3>
+              <p class="concept-copy">
+                This is the blend: Control Matrix on the edges, Atelier in the
+                middle. The shell keeps a disciplined command rail, but the
+                working area becomes a deliberate canvas for forms, reviews,
+                and setup flows. The inspector moves out of the permanent
+                layout and opens as a focused popup.
+              </p>
+            </div>
+            <div class="tags">
+              <span class="tag">Hybrid shell</span>
+              <span class="tag">Strong mutations</span>
+              <span class="tag">Best balance</span>
+            </div>
+          </div>
+
+          <div class="terminal hybrid">
+            <div class="terminal-top">
+              <div class="traffic">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <div class="top-meta">
+                <span>zitadel-tui / applications</span>
+                <span class="pill"><span class="light ok"></span>PAT authenticated</span>
+                <span class="pill"><span class="light info"></span>workspace mode</span>
+              </div>
+            </div>
+
+            <div class="terminal-body popup-anchor">
+              <div class="concept-grid">
+                <section class="panel">
+                  <div class="panel-title">
+                    <span>Command rail</span>
+                    <span class="muted">[g] go</span>
+                  </div>
+                  <ul class="menu-list">
+                    <li class="selected"><span>Applications</span><span>8</span></li>
+                    <li><span>Users</span><span>43</span></li>
+                    <li><span>IDPs</span><span>2</span></li>
+                    <li><span>Auth</span><span>✓</span></li>
+                    <li><span>Config</span><span>∴</span></li>
+                  </ul>
+
+                  <div class="panel-title" style="margin-top: 18px;">
+                    <span>Actions</span>
+                    <span class="muted">[/] palette</span>
+                  </div>
+                  <ul class="action-list">
+                    <li class="primary"><span>Create application</span><span>[n]</span></li>
+                    <li><span>Regenerate secret</span><span>[r]</span></li>
+                    <li><span>Delete selected</span><span>[d]</span></li>
+                    <li><span>Switch project</span><span>[p]</span></li>
+                  </ul>
+                </section>
+
+                <div class="canvas-stack">
+                  <section class="panel">
+                    <div class="panel-title">
+                      <span>Canvas</span>
+                      <span class="muted">Create OIDC application</span>
+                    </div>
+                    <div class="workbench">
+                      <div class="panel" style="margin: 0; min-height: 0;">
+                        <div class="panel-title">
+                          <span>Form</span>
+                          <span class="muted">[Tab] next field</span>
+                        </div>
+                        <ul class="detail-list">
+                          <li><span>Name</span><span>grafana-staging</span></li>
+                          <li><span>Client type</span><span>confidential</span></li>
+                          <li><span>Redirect URIs</span><span>2 configured</span></li>
+                          <li><span>Post logout</span><span>1 configured</span></li>
+                        </ul>
+                      </div>
+                      <div class="panel" style="margin: 0; min-height: 0;">
+                        <div class="panel-title">
+                          <span>Review</span>
+                          <span class="muted">generated</span>
+                        </div>
+                        <div style="font-family: var(--mono); line-height: 1.7; color: rgba(255, 255, 255, 0.74);">
+                          Client ID pending
+                          <br />
+                          Secret will be shown once
+                          <br />
+                          Redirects validated
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="panel">
+                    <div class="panel-title">
+                      <span>Selection tray</span>
+                      <span class="muted">existing applications</span>
+                    </div>
+                    <ul class="record-list">
+                      <li class="selected"><span>grafana-main</span><span>confidential</span></li>
+                      <li><span>paperless</span><span>confidential</span></li>
+                      <li><span>mealie-web</span><span>public</span></li>
+                      <li><span>nextcloud</span><span>inactive</span></li>
+                    </ul>
+                  </section>
+                </div>
+              </div>
+
+              <section class="popup">
+                <div class="panel-title">
+                  <span>Inspector popup</span>
+                  <span class="muted">[i] toggle</span>
+                </div>
+                <ul class="detail-list">
+                  <li><span>Name</span><span>grafana-main</span></li>
+                  <li><span>State</span><span>active</span></li>
+                  <li><span>Redirects</span><span>2 URIs</span></li>
+                  <li><span>Secret status</span><span>hidden</span></li>
+                  <li><span>Last changed</span><span>09:41 UTC</span></li>
+                </ul>
+                <div class="popup-note">
+                  Inspector opens on demand so the base shell stays quieter, but
+                  record context is still one keystroke away during edits or
+                  destructive actions.
+                </div>
+              </section>
+
+              <div class="statusline">
+                Hybrid recommendation: left rail for intent, center canvas for work,
+                popup inspector for context. This is the direction I would build.
+              </div>
+            </div>
+          </div>
+
+          <p class="note">
+            This keeps the command discipline and headless alignment of Control
+            Matrix, while making the center pane feel crafted and less like a
+            dashboard grid. Moving the inspector to a popup makes the whole
+            layout calmer without removing any capability.
+          </p>
+          <div class="decision">Recommended blend to carry forward</div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
