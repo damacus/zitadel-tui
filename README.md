@@ -36,7 +36,8 @@ Current status:
 
 - **Configuration and Auth**
   - TOML config in XDG config space
-  - auth precedence `CLI > env > config > setup`
+  - auth precedence `CLI > env > config`
+  - PAT precedence over service-account credentials within each source
   - PAT and direct service-account file support
 
 ## Installation
@@ -71,8 +72,10 @@ zitadel-tui
 
 ### Headless mode
 
-Non-interactive commands require `--once`. Use `--json` for machine-readable
-output.
+Non-interactive commands require `--once`. Running a subcommand without
+`--once` fails, and `--once` on its own is also invalid.
+
+Use `--json` for machine-readable output.
 
 ```bash
 zitadel-tui --once apps list
@@ -88,6 +91,165 @@ zitadel-tui --once idps configure-google \
   --client-id google-client-id \
   --client-secret google-client-secret
 ```
+
+### Global options
+
+`--host <HOST>`
+: Override the Zitadel base URL. Also available as `ZITADEL_URL`.
+Example: `zitadel-tui --host https://zitadel.example.com`
+
+`--project-id <PROJECT_ID>`
+: Use a specific project for app operations. Also available as
+`ZITADEL_PROJECT_ID`. In headless mode this is optional because the CLI can
+resolve the default project when omitted.
+Example: `zitadel-tui --once --project-id 123456789 apps list`
+
+`--token <TOKEN>`
+: Authenticate with a PAT. Also available as `ZITADEL_TOKEN`.
+Example: `zitadel-tui --once --token "$ZITADEL_PAT" auth validate`
+
+`--service-account-file <SERVICE_ACCOUNT_FILE>`
+: Authenticate with a Zitadel service-account JSON key file. Also available as
+`ZITADEL_SERVICE_ACCOUNT_FILE`.
+Example: `zitadel-tui --once --service-account-file ./service-account.json auth validate`
+
+`--config <CONFIG>`
+: Read runtime configuration from a non-default TOML file instead of the
+canonical XDG path.
+Example: `zitadel-tui --config ./config.toml`
+
+`--json`
+: Print JSON envelopes for headless commands.
+Example: `zitadel-tui --once --json config show`
+
+`--once`
+: Run a subcommand in non-interactive mode. Required for every CLI command.
+Example: `zitadel-tui --once users list`
+
+### Command reference
+
+#### `apps`
+
+`apps list`
+: List OIDC applications for the active project.
+Example: `zitadel-tui --once apps list`
+
+`apps create`
+: Create an OIDC application. Use either `--template <TEMPLATE>` or the manual
+combination of `--name <NAME>` plus at least one `--redirect-uris <URI>`.
+Example: `zitadel-tui --once apps create --template grafana`
+Example: `zitadel-tui --once apps create --name grafana --redirect-uris https://grafana.example.com/login/generic_oauth,https://grafana.example.com/oauth2/callback --public`
+
+`--name <NAME>`
+: App name when creating manually. Ignored when `--template` is used.
+
+`--redirect-uris <REDIRECT_URIS>`
+: Comma-delimited redirect URI list for manual app creation.
+
+`--public`
+: Create the app as a public client for manual app creation.
+
+`--template <TEMPLATE>`
+: Create the app from a named entry in `apps_config_file`.
+
+`apps delete`
+: Delete an application by Zitadel app ID.
+Example: `zitadel-tui --once apps delete --app-id 123456789012345678`
+
+`--app-id <APP_ID>`
+: Target application ID for `apps delete` and `apps regenerate-secret`.
+
+`apps regenerate-secret`
+: Regenerate a confidential client's secret.
+Example: `zitadel-tui --once apps regenerate-secret --app-id 123456789012345678`
+
+`--client-id <CLIENT_ID>`
+: Optional client ID annotation included in the command result.
+
+`apps quick-setup`
+: Create apps from all configured templates, or only the comma-delimited names
+passed with `--names`.
+Example: `zitadel-tui --once apps quick-setup`
+Example: `zitadel-tui --once apps quick-setup --names grafana,mealie`
+
+`--names <NAMES>`
+: Comma-delimited subset of app template names to create.
+
+#### `users`
+
+`users list`
+: List users.
+Example: `zitadel-tui --once users list`
+
+`users create`
+: Create a human user.
+Example: `zitadel-tui --once users create --email alice@example.com --first-name Alice --last-name Admin --username alice`
+
+`--email <EMAIL>`
+: Email address for `users create` and `users create-admin`.
+
+`--first-name <FIRST_NAME>`
+: First name for `users create` and `users create-admin`.
+
+`--last-name <LAST_NAME>`
+: Last name for `users create` and `users create-admin`.
+
+`--username <USERNAME>`
+: Optional login name for `users create`; required for `users create-admin`.
+
+`users create-admin`
+: Import a local admin user and grant admin access. In headless mode
+`--password <PASSWORD>` is required.
+Example: `zitadel-tui --once users create-admin --username admin --first-name Admin --last-name User --email admin@example.com --password 'change-me-now'`
+
+`--password <PASSWORD>`
+: Password for `users create-admin` in headless mode.
+
+`users grant-iam-owner`
+: Grant the `IAM_OWNER` role to an existing user.
+Example: `zitadel-tui --once users grant-iam-owner --user-id 123456789012345678`
+
+`--user-id <USER_ID>`
+: Target user ID for `users grant-iam-owner`.
+
+`users quick-setup`
+: Create every user from the YAML templates file. This command has no
+command-specific flags.
+Example: `zitadel-tui --once users quick-setup`
+
+#### `idps`
+
+`idps list`
+: List configured identity providers.
+Example: `zitadel-tui --once idps list`
+
+`idps configure-google`
+: Create a Google identity provider. In headless mode `--client-secret` is
+required.
+Example: `zitadel-tui --once idps configure-google --client-id google-client-id --client-secret google-client-secret`
+
+`--client-id <CLIENT_ID>`
+: Google OAuth client ID.
+
+`--client-secret <CLIENT_SECRET>`
+: Google OAuth client secret. Required in headless mode.
+
+`--name <NAME>`
+: Display name for the provider. Defaults to `Google`.
+
+#### `auth`
+
+`auth validate`
+: Resolve credentials, authenticate, and report the active auth source and
+project count. This command has no command-specific flags.
+Example: `zitadel-tui --once --json auth validate`
+
+#### `config`
+
+`config show`
+: Print the active runtime configuration with secrets redacted. This command
+has no command-specific flags.
+Example: `zitadel-tui --once config show`
 
 ## Configuration
 
@@ -140,19 +302,24 @@ users:
 
 ## Authentication
 
+Authentication is resolved in this order:
+
+1. CLI flags
+2. Environment variables
+3. TOML config
+
+Within each source, PAT credentials are checked before service-account
+credentials.
+
 Supported today:
 
 1. `--token`, `ZITADEL_TOKEN`, or `pat` in config
 2. `--service-account-file`, `ZITADEL_SERVICE_ACCOUNT_FILE`, or
    `service_account_file` in config
 
-Not supported anymore:
-
-- Kubernetes secret lookup
-
 Deferred:
 
-- OAuth device flow with persisted session material
+- OAuth device flow remains a visible placeholder and is not implemented
 
 ## Docker
 
