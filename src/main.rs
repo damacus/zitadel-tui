@@ -3,6 +3,8 @@ mod cli;
 mod client;
 mod conductor;
 mod config;
+mod oidc;
+mod token_cache;
 mod tui;
 
 use std::io;
@@ -496,5 +498,61 @@ mod tests {
     fn accepts_once_with_command() {
         let cli = Cli::parse_from(["zitadel-tui", "--once", "apps", "list"]);
         assert!(validate_cli(&cli).is_ok());
+    }
+
+    #[test]
+    fn accepts_once_with_host_and_command() {
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "--once",
+            "--host",
+            "https://zitadel.example.com",
+            "apps",
+            "list",
+        ]);
+        assert!(validate_cli(&cli).is_ok());
+    }
+
+    #[test]
+    fn resolved_host_uses_cli_arg() {
+        let cli = Cli::parse_from(["zitadel-tui", "--host", "https://cli.example.com"]);
+        let config = AppConfig::default();
+        assert_eq!(
+            resolved_host(&cli, &config).unwrap(),
+            "https://cli.example.com"
+        );
+    }
+
+    #[test]
+    fn resolved_host_falls_back_to_config() {
+        let cli = Cli::parse_from(["zitadel-tui"]);
+        let config = AppConfig {
+            zitadel_url: Some("https://config.example.com".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolved_host(&cli, &config).unwrap(),
+            "https://config.example.com"
+        );
+    }
+
+    #[test]
+    fn resolved_host_cli_arg_takes_precedence_over_config() {
+        let cli = Cli::parse_from(["zitadel-tui", "--host", "https://cli.example.com"]);
+        let config = AppConfig {
+            zitadel_url: Some("https://config.example.com".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolved_host(&cli, &config).unwrap(),
+            "https://cli.example.com"
+        );
+    }
+
+    #[test]
+    fn resolved_host_errors_when_absent() {
+        let cli = Cli::parse_from(["zitadel-tui"]);
+        let config = AppConfig::default();
+        assert!(resolved_host(&cli, &config).is_err());
     }
 }
