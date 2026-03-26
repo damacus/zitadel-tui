@@ -9,13 +9,9 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
-RUN cargo build --release
+RUN cargo build --release --locked
 
-FROM alpine:3.22
-
-RUN apk add --no-cache ca-certificates
-
-WORKDIR /app
+FROM scratch
 
 COPY --from=builder /app/target/release/zitadel-tui /usr/local/bin/zitadel-tui
 
