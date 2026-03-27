@@ -218,8 +218,7 @@ async fn quick_setup_apps_batches_creates_and_refreshes() {
         .templates
         .apps
         .insert("mealie".to_string(), app_template("mealie"));
-    conductor.client =
-        Some(ZitadelClient::new(server.url(), "test-token".to_string()).unwrap());
+    conductor.client = Some(ZitadelClient::new(server.url(), "test-token".to_string()).unwrap());
     let form = FormState {
         title: "Quick setup applications".to_string(),
         description: String::new(),
@@ -348,8 +347,7 @@ async fn quick_setup_users_batches_creates_and_grants_admins() {
             admin: false,
         },
     ];
-    conductor.client =
-        Some(ZitadelClient::new(server.url(), "test-token".to_string()).unwrap());
+    conductor.client = Some(ZitadelClient::new(server.url(), "test-token".to_string()).unwrap());
     let form = FormState {
         title: "Quick setup users".to_string(),
         description: String::new(),

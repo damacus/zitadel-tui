@@ -10,8 +10,8 @@ use crate::{
     client::ZitadelClient,
     config::{AppConfig, AppTemplate, TemplatesFile, UserTemplate},
     tui::{
-        CanvasMode, ConfirmState, FormState, MessageState, PendingAction, Record,
-        ResourceKind, TuiBootstrap,
+        CanvasMode, ConfirmState, FormState, MessageState, PendingAction, Record, ResourceKind,
+        TuiBootstrap,
     },
 };
 

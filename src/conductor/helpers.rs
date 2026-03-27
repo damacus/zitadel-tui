@@ -111,12 +111,7 @@ pub(super) fn text_field(key: &'static str, label: &str, value: &str, help: &str
     }
 }
 
-pub(super) fn secret_field(
-    key: &'static str,
-    label: &str,
-    value: &str,
-    help: &str,
-) -> FormField {
+pub(super) fn secret_field(key: &'static str, label: &str, value: &str, help: &str) -> FormField {
     FormField {
         key,
         label: label.to_string(),
@@ -126,12 +121,7 @@ pub(super) fn secret_field(
     }
 }
 
-pub(super) fn toggle_field(
-    key: &'static str,
-    label: &str,
-    value: bool,
-    help: &str,
-) -> FormField {
+pub(super) fn toggle_field(key: &'static str, label: &str, value: bool, help: &str) -> FormField {
     FormField {
         key,
         label: label.to_string(),
@@ -157,12 +147,7 @@ pub(super) fn choice_field(
     }
 }
 
-pub(super) fn checkbox_field(
-    key: &'static str,
-    label: &str,
-    value: bool,
-    help: &str,
-) -> FormField {
+pub(super) fn checkbox_field(key: &'static str, label: &str, value: bool, help: &str) -> FormField {
     FormField {
         key,
         label: label.to_string(),
