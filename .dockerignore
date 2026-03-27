@@ -1,7 +1,12 @@
 .git
 .gitignore
-.rspec
-.rubocop.yml
+.github
+.claude
+.jules
+designs
+scripts
+site_docs
+target
 README.md
 spec/
 tmp/

@@ -15,6 +15,7 @@ pub struct AppConfig {
     pub apps_config_file: Option<PathBuf>,
     pub pat: Option<String>,
     pub service_account_file: Option<PathBuf>,
+    pub device_client_id: Option<String>,
 }
 
 impl std::fmt::Debug for AppConfig {
@@ -25,6 +26,7 @@ impl std::fmt::Debug for AppConfig {
             .field("apps_config_file", &self.apps_config_file)
             .field("pat", &self.pat.as_ref().map(|_| "[REDACTED]"))
             .field("service_account_file", &self.service_account_file)
+            .field("device_client_id", &self.device_client_id)
             .finish()
     }
 }
@@ -34,12 +36,13 @@ impl Serialize for AppConfig {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("AppConfig", 5)?;
+        let mut state = serializer.serialize_struct("AppConfig", 6)?;
         state.serialize_field("zitadel_url", &self.zitadel_url)?;
         state.serialize_field("project_id", &self.project_id)?;
         state.serialize_field("apps_config_file", &self.apps_config_file)?;
         state.serialize_field("pat", &self.pat.as_ref().map(|_| "[REDACTED]"))?;
         state.serialize_field("service_account_file", &self.service_account_file)?;
+        state.serialize_field("device_client_id", &self.device_client_id)?;
         state.end()
     }
 }
@@ -149,6 +152,7 @@ struct PersistedAppConfig {
     apps_config_file: Option<PathBuf>,
     pat: Option<String>,
     service_account_file: Option<PathBuf>,
+    device_client_id: Option<String>,
 }
 
 impl From<&AppConfig> for PersistedAppConfig {
@@ -159,6 +163,7 @@ impl From<&AppConfig> for PersistedAppConfig {
             apps_config_file: value.apps_config_file.clone(),
             pat: value.pat.clone(),
             service_account_file: value.service_account_file.clone(),
+            device_client_id: value.device_client_id.clone(),
         }
     }
 }
@@ -205,16 +210,8 @@ mod tests {
     use std::{
         env, fs,
         path::{Path, PathBuf},
-        sync::{Mutex, OnceLock},
         time::{SystemTime, UNIX_EPOCH},
     };
-
-    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -244,6 +241,7 @@ mod tests {
             apps_config_file: Some(PathBuf::from("/tmp/apps.yml")),
             pat: Some("secret-token".to_string()),
             service_account_file: Some(PathBuf::from("/tmp/sa.json")),
+            device_client_id: None,
         };
 
         let value = serde_json::to_value(&config).unwrap();
@@ -288,7 +286,7 @@ mod tests {
 
     #[test]
     fn load_uses_xdg_config_only() {
-        let _guard = test_lock();
+        let _guard = crate::test_support::env_lock();
         let cwd_config = temp_dir("cwd").join("config.toml");
         let xdg_config = temp_dir("xdg").join("config.toml");
 
@@ -308,7 +306,7 @@ mod tests {
 
     #[test]
     fn save_writes_secret_config_with_restricted_permissions() {
-        let _guard = test_lock();
+        let _guard = crate::test_support::env_lock();
         let path = temp_dir("save").join("config.toml");
         let config = AppConfig {
             zitadel_url: Some("https://zitadel.example.com".to_string()),
@@ -316,6 +314,7 @@ mod tests {
             apps_config_file: Some(PathBuf::from("/tmp/apps.yml")),
             pat: Some("secret-token".to_string()),
             service_account_file: Some(PathBuf::from("/tmp/sa.json")),
+            device_client_id: None,
         };
 
         config.write_to_path(&path).unwrap();
@@ -337,6 +336,16 @@ mod tests {
             assert_eq!(file_mode, 0o600);
             assert_eq!(dir_mode, 0o700);
         }
+    }
+
+    #[test]
+    fn load_device_client_id_from_toml() {
+        let config =
+            AppConfig::load_from_str(r#"device_client_id = "native-app-client-id""#).unwrap();
+        assert_eq!(
+            config.device_client_id.as_deref(),
+            Some("native-app-client-id")
+        );
     }
 
     #[test]

@@ -68,7 +68,7 @@ zitadel-tui --once idps list
 zitadel-tui --once idps configure-google \
   --client-id google-client-id \
   --client-secret google-client-secret
-zitadel-tui --once --json auth validate
+zitadel-tui --once --json auth status
 zitadel-tui --once config show
 ```
 
