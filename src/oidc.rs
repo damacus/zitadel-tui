@@ -11,6 +11,7 @@ pub struct DeviceAuthResponse {
     pub verification_uri: String,
     #[serde(default)]
     pub verification_uri_complete: Option<String>,
+    #[allow(dead_code)]
     pub expires_in: u64,
     /// Minimum polling interval in seconds.
     #[serde(default = "default_interval")]
