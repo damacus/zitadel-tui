@@ -17,6 +17,11 @@ impl ZitadelClient {
         })
     }
 
+    pub async fn whoami(&self) -> Result<Value> {
+        self.api_request(Method::GET, "/auth/v1/users/me", None)
+            .await
+    }
+
     pub async fn list_projects(&self) -> Result<Vec<Value>> {
         let response = self
             .api_request(
@@ -79,6 +84,45 @@ impl ZitadelClient {
                 "version": "OIDC_VERSION_1_0",
                 "devMode": false,
                 "accessTokenType": "OIDC_TOKEN_TYPE_BEARER",
+                "accessTokenRoleAssertion": true,
+                "idTokenRoleAssertion": true,
+                "idTokenUserinfoAssertion": true,
+                "clockSkew": "1s",
+                "additionalOrigins": []
+            })),
+        )
+        .await
+    }
+
+    pub async fn create_native_app(
+        &self,
+        project_id: &str,
+        name: &str,
+        device_code: bool,
+    ) -> Result<Value> {
+        let mut grant_types = vec!["OIDC_GRANT_TYPE_REFRESH_TOKEN"];
+        if device_code {
+            grant_types.push("OIDC_GRANT_TYPE_DEVICE_CODE");
+        }
+        let access_token_type = if device_code {
+            "OIDC_TOKEN_TYPE_JWT"
+        } else {
+            "OIDC_TOKEN_TYPE_BEARER"
+        };
+        self.api_request(
+            Method::POST,
+            &format!("/management/v1/projects/{project_id}/apps/oidc"),
+            Some(json!({
+                "name": name,
+                "redirectUris": [],
+                "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
+                "grantTypes": grant_types,
+                "appType": "OIDC_APP_TYPE_NATIVE",
+                "authMethodType": "OIDC_AUTH_METHOD_TYPE_NONE",
+                "postLogoutRedirectUris": [],
+                "version": "OIDC_VERSION_1_0",
+                "devMode": false,
+                "accessTokenType": access_token_type,
                 "accessTokenRoleAssertion": true,
                 "idTokenRoleAssertion": true,
                 "idTokenUserinfoAssertion": true,
@@ -234,6 +278,12 @@ impl ZitadelClient {
         let status = response.status();
         let bytes = response.bytes().await?;
         if !status.is_success() {
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                bail!(
+                    "Authentication failed (401 Unauthorized). \
+                     Check your credentials or run `auth login` to authenticate."
+                );
+            }
             bail!("API request failed ({status})");
         }
 
@@ -330,6 +380,63 @@ mod tests {
         assert!(error.contains("403"));
         assert!(!error.contains("forbidden"));
         assert!(!error.contains("leaked"));
+    }
+
+    #[tokio::test]
+    async fn create_native_app_uses_jwt_tokens_for_device_code_clients() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/management/v1/projects/project-1/apps/oidc")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::PartialJson(json!({
+                "name": "zitadel-tui",
+                "grantTypes": [
+                    "OIDC_GRANT_TYPE_REFRESH_TOKEN",
+                    "OIDC_GRANT_TYPE_DEVICE_CODE"
+                ],
+                "accessTokenType": "OIDC_TOKEN_TYPE_JWT"
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"appId":"app-1","clientId":"cid-1"}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let created = client
+            .create_native_app("project-1", "zitadel-tui", true)
+            .await
+            .unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(created["clientId"], "cid-1");
+    }
+
+    #[tokio::test]
+    async fn create_native_app_keeps_bearer_tokens_without_device_code() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/management/v1/projects/project-1/apps/oidc")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::PartialJson(json!({
+                "name": "desktop-app",
+                "grantTypes": ["OIDC_GRANT_TYPE_REFRESH_TOKEN"],
+                "accessTokenType": "OIDC_TOKEN_TYPE_BEARER"
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"appId":"app-2","clientId":"cid-2"}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let created = client
+            .create_native_app("project-1", "desktop-app", false)
+            .await
+            .unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(created["clientId"], "cid-2");
     }
 
     #[tokio::test]

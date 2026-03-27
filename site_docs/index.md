@@ -53,12 +53,14 @@ zitadel-tui --once apps list
 ```
 
 Important behavior:
+
 - every headless command requires `--once`
 - `--json` switches headless output to JSON envelopes
 - `--project-id` is optional in headless mode because the CLI can resolve the
   default project when omitted
 
 Global options:
+
 - `--host`: override `ZITADEL_URL`
 - `--project-id`: override `ZITADEL_PROJECT_ID`
 - `--token`: use `ZITADEL_TOKEN`
@@ -68,6 +70,7 @@ Global options:
 - `--once`: enable non-interactive mode
 
 Subcommands:
+
 - `apps`: `list`, `create`, `delete`, `regenerate-secret`, `quick-setup`
 - `users`: `list`, `create`, `create-admin`, `grant-iam-owner`, `quick-setup`
 - `idps`: `list`, `configure-google`

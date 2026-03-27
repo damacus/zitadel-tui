@@ -1039,13 +1039,13 @@ Expected: apps listed without needing `--token`.
 
 - [ ] **Test validate shows session token source**
 ```bash
-./target/release/zitadel-tui --once --host https://zitadel.damacus.io auth validate
+./target/release/zitadel-tui --once --host https://zitadel.damacus.io auth status
 ```
 Expected: `"auth_source": "session token"`
 
 - [ ] **Test logout clears the session**
 ```bash
 ./target/release/zitadel-tui --once auth logout
-./target/release/zitadel-tui --once --host https://zitadel.damacus.io auth validate
+./target/release/zitadel-tui --once --host https://zitadel.damacus.io auth status
 ```
 Expected: second command fails with "no credentials available".
