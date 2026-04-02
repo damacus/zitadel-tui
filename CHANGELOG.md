@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.2](https://github.com/damacus/zitadel-tui/compare/v0.1.1...v0.1.2) (2026-04-02)
+
+
+### Features
+
+* add token cache and OIDC device flow modules ([#66](https://github.com/damacus/zitadel-tui/issues/66)) ([ec893af](https://github.com/damacus/zitadel-tui/commit/ec893af10b02259c0cbf619c372731318229e139))
+
+
+### Bug Fixes
+
+* **docs:** document all CLI options and correct config guidance ([#61](https://github.com/damacus/zitadel-tui/issues/61)) ([3db4ac9](https://github.com/damacus/zitadel-tui/commit/3db4ac9f90c99c33e0d57dd3ed7c7d96ce97f129))
+
 ## [0.1.1](https://github.com/damacus/zitadel-tui/compare/v0.1.0...v0.1.1) (2026-03-26)
 
 
