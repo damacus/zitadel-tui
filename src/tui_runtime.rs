@@ -101,16 +101,8 @@ async fn run_app(
                     }
                     CanvasMode::Success(_) | CanvasMode::Error(_) => app.reset_to_browse(),
                 },
-                KeyCode::Backspace => {
-                    if app.focus == Focus::Form {
-                        app.form_backspace();
-                    }
-                }
-                KeyCode::Char(' ') => {
-                    if app.focus == Focus::Form {
-                        app.form_toggle_or_cycle(true);
-                    }
-                }
+                KeyCode::Backspace if app.focus == Focus::Form => app.form_backspace(),
+                KeyCode::Char(' ') if app.focus == Focus::Form => app.form_toggle_or_cycle(true),
                 KeyCode::Char(ch) if app.focus == Focus::Form => app.form_insert_char(ch),
                 KeyCode::Tab => app.advance_focus(),
                 KeyCode::BackTab => app.reverse_focus(),
