@@ -190,10 +190,10 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn resolves_from_valid_token_cache() {
+        let _guard = crate::test_support::env_lock();
         let cache_path = temp_cache_path();
         env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
 
-        let _guard = crate::test_support::env_lock();
         let original_token = env::var("ZITADEL_TOKEN").ok();
         let original_sa = env::var("ZITADEL_SERVICE_ACCOUNT_FILE").ok();
         env::remove_var("ZITADEL_TOKEN");
@@ -243,10 +243,10 @@ mod tests {
             .create_async()
             .await;
 
+        let _guard = crate::test_support::env_lock();
         let cache_path = temp_cache_path();
         env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
 
-        let _guard = crate::test_support::env_lock();
         let original_token = env::var("ZITADEL_TOKEN").ok();
         let original_sa = env::var("ZITADEL_SERVICE_ACCOUNT_FILE").ok();
         env::remove_var("ZITADEL_TOKEN");
@@ -283,10 +283,10 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn rejects_cached_opaque_device_session_tokens() {
+        let _guard = crate::test_support::env_lock();
         let cache_path = temp_cache_path();
         env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
 
-        let _guard = crate::test_support::env_lock();
         let original_token = env::var("ZITADEL_TOKEN").ok();
         let original_sa = env::var("ZITADEL_SERVICE_ACCOUNT_FILE").ok();
         env::remove_var("ZITADEL_TOKEN");
