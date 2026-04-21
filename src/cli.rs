@@ -210,6 +210,21 @@ pub fn command_name(command: &Command) -> String {
 mod tests {
     use super::*;
     use clap::Parser;
+    use std::env;
+
+    fn clear_host_env() -> Option<String> {
+        let original = env::var("ZITADEL_URL").ok();
+        env::remove_var("ZITADEL_URL");
+        original
+    }
+
+    fn restore_host_env(original: Option<String>) {
+        if let Some(value) = original {
+            env::set_var("ZITADEL_URL", value);
+        } else {
+            env::remove_var("ZITADEL_URL");
+        }
+    }
 
     #[test]
     fn parses_apps_list_command() {
@@ -295,7 +310,10 @@ mod tests {
 
     #[test]
     fn host_defaults_to_none_when_absent() {
+        let _guard = crate::test_support::env_lock();
+        let original = clear_host_env();
         let cli = Cli::parse_from(["zitadel-tui"]);
+        restore_host_env(original);
         assert!(cli.host.is_none());
     }
 

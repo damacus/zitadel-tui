@@ -61,9 +61,26 @@ pub async fn resolved_project_id(
 mod tests {
     use super::*;
     use clap::Parser;
+    use std::env;
+
+    fn clear_host_env() -> Option<String> {
+        let original = env::var("ZITADEL_URL").ok();
+        env::remove_var("ZITADEL_URL");
+        original
+    }
+
+    fn restore_host_env(original: Option<String>) {
+        if let Some(value) = original {
+            env::set_var("ZITADEL_URL", value);
+        } else {
+            env::remove_var("ZITADEL_URL");
+        }
+    }
 
     #[test]
     fn resolved_host_uses_cli_arg() {
+        let _guard = crate::test_support::env_lock();
+        let original = clear_host_env();
         let args = Cli::parse_from(["zitadel-tui", "--host", "https://cli.example.com"]);
         let config = AppConfig {
             zitadel_url: Some("https://config.example.com".to_string()),
@@ -71,11 +88,14 @@ mod tests {
         };
 
         let host = resolved_host(&args, &config).unwrap();
+        restore_host_env(original);
         assert_eq!(host, "https://cli.example.com");
     }
 
     #[test]
     fn resolved_host_falls_back_to_config() {
+        let _guard = crate::test_support::env_lock();
+        let original = clear_host_env();
         let args = Cli::parse_from(["zitadel-tui"]);
         let config = AppConfig {
             zitadel_url: Some("https://config.example.com".to_string()),
@@ -83,11 +103,14 @@ mod tests {
         };
 
         let host = resolved_host(&args, &config).unwrap();
+        restore_host_env(original);
         assert_eq!(host, "https://config.example.com");
     }
 
     #[test]
     fn resolved_host_cli_arg_takes_precedence_over_config() {
+        let _guard = crate::test_support::env_lock();
+        let original = clear_host_env();
         let args = Cli::parse_from(["zitadel-tui", "--host", "https://cli.example.com"]);
         let config = AppConfig {
             zitadel_url: Some("https://config.example.com".to_string()),
@@ -95,16 +118,20 @@ mod tests {
         };
 
         let host = resolved_host(&args, &config).unwrap();
+        restore_host_env(original);
         assert_eq!(host, "https://cli.example.com");
     }
 
     #[test]
     fn resolved_host_errors_when_absent() {
+        let _guard = crate::test_support::env_lock();
+        let original = clear_host_env();
         let args = Cli::parse_from(["zitadel-tui"]);
         let error = resolved_host(&args, &AppConfig::default())
             .unwrap_err()
             .to_string();
 
+        restore_host_env(original);
         assert!(error.contains("Zitadel URL is required"));
     }
 }

@@ -264,6 +264,8 @@ mod tests {
     #[tokio::test]
     async fn auth_status_uses_valid_cached_session_tokens() {
         let _guard = crate::test_support::env_lock();
+        let original_host = env::var("ZITADEL_URL").ok();
+        env::remove_var("ZITADEL_URL");
         let cache_path = temp_cache_path();
         env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
 
@@ -307,5 +309,8 @@ mod tests {
 
         env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
         let _ = fs::remove_file(cache_path);
+        if let Some(host) = original_host {
+            env::set_var("ZITADEL_URL", host);
+        }
     }
 }
