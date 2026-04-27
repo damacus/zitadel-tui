@@ -68,10 +68,6 @@ async fn main() -> Result<()> {
 }
 
 fn validate_cli(args: &Cli) -> Result<()> {
-    if args.command.is_some() && !args.once {
-        anyhow::bail!("non-interactive commands require --once");
-    }
-
     if args.once && args.command.is_none() {
         anyhow::bail!("--once requires a subcommand");
     }
@@ -96,9 +92,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_command_without_once() {
+    fn accepts_command_without_once() {
         let cli = Cli::parse_from(["zitadel-tui", "apps", "list"]);
-        assert!(validate_cli(&cli).is_err());
+        assert!(validate_cli(&cli).is_ok());
     }
 
     #[test]

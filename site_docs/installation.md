@@ -33,43 +33,44 @@ Use clap help to inspect the current command tree:
 
 ```bash
 zitadel-tui --help
-zitadel-tui --once apps --help
-zitadel-tui --once users --help
-zitadel-tui --once idps --help
-zitadel-tui --once auth --help
-zitadel-tui --once config --help
+zitadel-tui apps --help
+zitadel-tui users --help
+zitadel-tui idps --help
+zitadel-tui auth --help
+zitadel-tui config --help
 ```
 
-Every headless command requires `--once`.
+Supplying a subcommand runs a one-shot command. The legacy `--once` flag still
+works, but is no longer required.
 
 ## Headless examples
 
 ```bash
-zitadel-tui --once apps list
-zitadel-tui --once apps create --template grafana
-zitadel-tui --once apps create \
+zitadel-tui apps list
+zitadel-tui apps create --template grafana
+zitadel-tui apps create \
   --name grafana \
   --redirect-uris https://grafana.example.com/login/generic_oauth,https://grafana.example.com/oauth2/callback \
   --public
-zitadel-tui --once users create \
+zitadel-tui users create \
   --email alice@example.com \
   --first-name Alice \
   --last-name Admin \
   --username alice
-zitadel-tui --once users create-admin \
+zitadel-tui users create-admin \
   --username admin \
   --first-name Admin \
   --last-name User \
   --email admin@example.com \
   --password 'change-me-now'
-zitadel-tui --once users grant-iam-owner --user-id 123456789012345678
-zitadel-tui --once users quick-setup
-zitadel-tui --once idps list
-zitadel-tui --once idps configure-google \
+zitadel-tui users grant-iam-owner --user-id 123456789012345678
+zitadel-tui users quick-setup
+zitadel-tui idps list
+zitadel-tui idps configure-google \
   --client-id google-client-id \
   --client-secret google-client-secret
-zitadel-tui --once --json auth status
-zitadel-tui --once config show
+zitadel-tui --json auth status
+zitadel-tui config show
 ```
 
 ## Requirements

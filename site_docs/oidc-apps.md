@@ -54,13 +54,13 @@ For ongoing maintenance:
 List apps:
 
 ```bash
-zitadel-tui --once apps list
+zitadel-tui apps list
 ```
 
 Create a Grafana app manually:
 
 ```bash
-zitadel-tui --once apps create \
+zitadel-tui apps create \
   --name grafana \
   --redirect-uris https://grafana.example.com/login/generic_oauth,https://grafana.example.com/oauth2/callback
 ```
@@ -68,19 +68,19 @@ zitadel-tui --once apps create \
 Create a native app for device-flow login:
 
 ```bash
-zitadel-tui --once apps create-native --name zitadel-tui --device-code
+zitadel-tui apps create-native --name zitadel-tui --device-code
 ```
 
 Delete an app:
 
 ```bash
-zitadel-tui --once apps delete --app-id 123456789012345678
+zitadel-tui apps delete --app-id 123456789012345678
 ```
 
 Rotate a confidential client secret:
 
 ```bash
-zitadel-tui --once apps regenerate-secret --app-id 123456789012345678
+zitadel-tui apps regenerate-secret --app-id 123456789012345678
 ```
 
 Quick setup from templates:
@@ -108,7 +108,7 @@ apps:
 Then run:
 
 ```bash
-zitadel-tui --once apps quick-setup --names grafana,paperless,nextcloud
+zitadel-tui apps quick-setup --names grafana,paperless,nextcloud
 ```
 
 ## If authentication is the blocker
@@ -118,7 +118,7 @@ For the smoothest path today:
 1. Use a PAT if you already have one.
 2. Use a service-account file if this is automation or shared admin tooling.
 3. Use device flow only after creating a native app with `--device-code`, then
-   run `zitadel-tui --once auth login --client-id <CLIENT_ID>`.
+   run `zitadel-tui auth login --client-id <CLIENT_ID>`.
 
 If `auth login` succeeds in the browser but still fails in the CLI, the usual
 cause is that the native app is returning an access token format the Zitadel

@@ -73,22 +73,23 @@ zitadel-tui
 
 ### Headless mode
 
-Non-interactive commands require `--once`. Running a subcommand without
-`--once` fails, and `--once` on its own is also invalid.
+Supplying a subcommand runs the existing one-shot command path. The legacy
+`--once` flag is still accepted for compatibility, but is no longer required.
+`--once` on its own is invalid because there is no subcommand to run.
 
 Use `--json` for machine-readable output.
 
 ```bash
-zitadel-tui --once apps list
-zitadel-tui --once --json auth status
-zitadel-tui --once apps create --name grafana --redirect-uris https://grafana.example.com/login/generic_oauth
-zitadel-tui --once users create-admin \
+zitadel-tui apps list
+zitadel-tui --json auth status
+zitadel-tui apps create --name grafana --redirect-uris https://grafana.example.com/login/generic_oauth
+zitadel-tui users create-admin \
   --username admin \
   --first-name Admin \
   --last-name User \
   --email admin@example.com \
   --password 'change-me-now'
-zitadel-tui --once idps configure-google \
+zitadel-tui idps configure-google \
   --client-id google-client-id \
   --client-secret google-client-secret
 ```
@@ -103,16 +104,16 @@ Example: `zitadel-tui --host https://zitadel.example.com`
 : Use a specific project for app operations. Also available as
 `ZITADEL_PROJECT_ID`. In headless mode this is optional because the CLI can
 resolve the default project when omitted.
-Example: `zitadel-tui --once --project-id 123456789 apps list`
+Example: `zitadel-tui --project-id 123456789 apps list`
 
 `--token <TOKEN>`
 : Authenticate with a PAT. Also available as `ZITADEL_TOKEN`.
-Example: `zitadel-tui --once --token "$ZITADEL_PAT" auth status`
+Example: `zitadel-tui --token "$ZITADEL_PAT" auth status`
 
 `--service-account-file <SERVICE_ACCOUNT_FILE>`
 : Authenticate with a Zitadel service-account JSON key file. Also available as
 `ZITADEL_SERVICE_ACCOUNT_FILE`.
-Example: `zitadel-tui --once --service-account-file ./service-account.json auth status`
+Example: `zitadel-tui --service-account-file ./service-account.json auth status`
 
 `--config <CONFIG>`
 : Read runtime configuration from a non-default TOML file instead of the
@@ -121,10 +122,11 @@ Example: `zitadel-tui --config ./config.toml`
 
 `--json`
 : Print JSON envelopes for headless commands.
-Example: `zitadel-tui --once --json config show`
+Example: `zitadel-tui --json config show`
 
 `--once`
-: Run a subcommand in non-interactive mode. Required for every CLI command.
+: Legacy compatibility flag for one-shot subcommand execution. Subcommands now
+run one-shot without it.
 Example: `zitadel-tui --once users list`
 
 ### Command reference
@@ -133,13 +135,13 @@ Example: `zitadel-tui --once users list`
 
 `apps list`
 : List OIDC applications for the active project.
-Example: `zitadel-tui --once apps list`
+Example: `zitadel-tui apps list`
 
 `apps create`
 : Create an OIDC application. Use either `--template <TEMPLATE>` or the manual
 combination of `--name <NAME>` plus at least one `--redirect-uris <URI>`.
-Example: `zitadel-tui --once apps create --template grafana`
-Example: `zitadel-tui --once apps create --name grafana --redirect-uris https://grafana.example.com/login/generic_oauth,https://grafana.example.com/oauth2/callback --public`
+Example: `zitadel-tui apps create --template grafana`
+Example: `zitadel-tui apps create --name grafana --redirect-uris https://grafana.example.com/login/generic_oauth,https://grafana.example.com/oauth2/callback --public`
 
 `--name <NAME>`
 : App name when creating manually. Ignored when `--template` is used.
@@ -155,7 +157,7 @@ Example: `zitadel-tui --once apps create --name grafana --redirect-uris https://
 
 `apps create-native`
 : Create a native OIDC application. With `--device-code`, the CLI configures JWT access tokens so the app can be used for `auth login`.
-Example: `zitadel-tui --once apps create-native --name zitadel-tui --device-code`
+Example: `zitadel-tui apps create-native --name zitadel-tui --device-code`
 
 `--name <NAME>`
 : Display name for the native application.
@@ -165,14 +167,14 @@ Example: `zitadel-tui --once apps create-native --name zitadel-tui --device-code
 
 `apps delete`
 : Delete an application by Zitadel app ID.
-Example: `zitadel-tui --once apps delete --app-id 123456789012345678`
+Example: `zitadel-tui apps delete --app-id 123456789012345678`
 
 `--app-id <APP_ID>`
 : Target application ID for `apps delete` and `apps regenerate-secret`.
 
 `apps regenerate-secret`
 : Regenerate a confidential client's secret.
-Example: `zitadel-tui --once apps regenerate-secret --app-id 123456789012345678`
+Example: `zitadel-tui apps regenerate-secret --app-id 123456789012345678`
 
 `--client-id <CLIENT_ID>`
 : Optional client ID annotation included in the command result.
@@ -180,8 +182,8 @@ Example: `zitadel-tui --once apps regenerate-secret --app-id 123456789012345678`
 `apps quick-setup`
 : Create apps from all configured templates, or only the comma-delimited names
 passed with `--names`.
-Example: `zitadel-tui --once apps quick-setup`
-Example: `zitadel-tui --once apps quick-setup --names grafana,mealie`
+Example: `zitadel-tui apps quick-setup`
+Example: `zitadel-tui apps quick-setup --names grafana,mealie`
 
 `--names <NAMES>`
 : Comma-delimited subset of app template names to create.
@@ -190,11 +192,11 @@ Example: `zitadel-tui --once apps quick-setup --names grafana,mealie`
 
 `users list`
 : List users.
-Example: `zitadel-tui --once users list`
+Example: `zitadel-tui users list`
 
 `users create`
 : Create a human user.
-Example: `zitadel-tui --once users create --email alice@example.com --first-name Alice --last-name Admin --username alice`
+Example: `zitadel-tui users create --email alice@example.com --first-name Alice --last-name Admin --username alice`
 
 `--email <EMAIL>`
 : Email address for `users create` and `users create-admin`.
@@ -211,14 +213,14 @@ Example: `zitadel-tui --once users create --email alice@example.com --first-name
 `users create-admin`
 : Import a local admin user and grant admin access. In headless mode
 `--password <PASSWORD>` is required.
-Example: `zitadel-tui --once users create-admin --username admin --first-name Admin --last-name User --email admin@example.com --password 'change-me-now'`
+Example: `zitadel-tui users create-admin --username admin --first-name Admin --last-name User --email admin@example.com --password 'change-me-now'`
 
 `--password <PASSWORD>`
 : Password for `users create-admin` in headless mode.
 
 `users grant-iam-owner`
 : Grant the `IAM_OWNER` role to an existing user.
-Example: `zitadel-tui --once users grant-iam-owner --user-id 123456789012345678`
+Example: `zitadel-tui users grant-iam-owner --user-id 123456789012345678`
 
 `--user-id <USER_ID>`
 : Target user ID for `users grant-iam-owner`.
@@ -226,18 +228,18 @@ Example: `zitadel-tui --once users grant-iam-owner --user-id 123456789012345678`
 `users quick-setup`
 : Create every user from the YAML templates file. This command has no
 command-specific flags.
-Example: `zitadel-tui --once users quick-setup`
+Example: `zitadel-tui users quick-setup`
 
 #### `idps`
 
 `idps list`
 : List configured identity providers.
-Example: `zitadel-tui --once idps list`
+Example: `zitadel-tui idps list`
 
 `idps configure-google`
 : Create a Google identity provider. In headless mode `--client-secret` is
 required.
-Example: `zitadel-tui --once idps configure-google --client-id google-client-id --client-secret google-client-secret`
+Example: `zitadel-tui idps configure-google --client-id google-client-id --client-secret google-client-secret`
 
 `--client-id <CLIENT_ID>`
 : Google OAuth client ID.
@@ -256,7 +258,7 @@ short code, waits for browser approval, then saves the access and refresh tokens
 to `~/.config/zitadel-tui/tokens.json`. Requires a Zitadel native app with the
 Device Code grant enabled and JWT access tokens configured for API access.
 The `apps create-native --device-code` path is intended for CLI login sessions.
-Example: `zitadel-tui --once --host https://zitadel.example.com auth login --client-id <CLIENT_ID>`
+Example: `zitadel-tui --host https://zitadel.example.com auth login --client-id <CLIENT_ID>`
 
 `--client-id <CLIENT_ID>`
 : The Zitadel native app client ID. If omitted and not set in config, the
@@ -266,19 +268,19 @@ Also available as `device_client_id` in config.
 `auth logout`
 : Remove the stored session token. Subsequent commands will require explicit
 credentials or a new `auth login`.
-Example: `zitadel-tui --once auth logout`
+Example: `zitadel-tui auth logout`
 
 `auth status`
 : Resolve credentials, authenticate, and report the active auth source plus the
 current user identity. Works with any credential source including a cached session token.
-Example: `zitadel-tui --once --json auth status`
+Example: `zitadel-tui --json auth status`
 
 #### `config`
 
 `config show`
 : Print the active runtime configuration with secrets redacted. This command
 has no command-specific flags.
-Example: `zitadel-tui --once config show`
+Example: `zitadel-tui config show`
 
 ## Configuration
 
@@ -344,7 +346,7 @@ Register a native app in your Zitadel instance with the **Device Code** grant
 type enabled and JWT access tokens enabled, then log in once:
 
 ```bash
-zitadel-tui --once --host https://zitadel.example.com auth login --client-id <CLIENT_ID>
+zitadel-tui --host https://zitadel.example.com auth login --client-id <CLIENT_ID>
 ```
 
 The command prints a URL and a short code. Open the URL in your browser,
@@ -355,14 +357,14 @@ saves the access and refresh tokens to
 After login, subsequent commands use the cached token automatically:
 
 ```bash
-zitadel-tui --once --host https://zitadel.example.com apps list
-zitadel-tui --once --host https://zitadel.example.com auth status
+zitadel-tui --host https://zitadel.example.com apps list
+zitadel-tui --host https://zitadel.example.com auth status
 ```
 
 Tokens are silently refreshed when they expire. Log out with:
 
 ```bash
-zitadel-tui --once auth logout
+zitadel-tui auth logout
 ```
 
 ### Token cache

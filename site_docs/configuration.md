@@ -116,15 +116,15 @@ Example: `zitadel-tui --host https://zitadel.example.com`
 
 `--project-id <PROJECT_ID>`
 : Overrides `project_id`.
-Example: `zitadel-tui --once --project-id 123456789 apps list`
+Example: `zitadel-tui --project-id 123456789 apps list`
 
 `--token <TOKEN>`
 : Overrides `pat`.
-Example: `zitadel-tui --once --token "$ZITADEL_PAT" auth status`
+Example: `zitadel-tui --token "$ZITADEL_PAT" auth status`
 
 `--service-account-file <SERVICE_ACCOUNT_FILE>`
 : Overrides `service_account_file`.
-Example: `zitadel-tui --once --service-account-file ./service-account.json auth status`
+Example: `zitadel-tui --service-account-file ./service-account.json auth status`
 
 `--config <CONFIG>`
 : Loads a non-default TOML file.

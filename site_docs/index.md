@@ -49,12 +49,12 @@ zitadel-tui
 Run any headless command:
 
 ```bash
-zitadel-tui --once apps list
+zitadel-tui apps list
 ```
 
 Important behavior:
 
-- every headless command requires `--once`
+- subcommands run one-shot without `--once`
 - `--json` switches headless output to JSON envelopes
 - `--project-id` is optional in headless mode because the CLI can resolve the
   default project when omitted
@@ -67,7 +67,7 @@ Global options:
 - `--service-account-file`: use `ZITADEL_SERVICE_ACCOUNT_FILE`
 - `--config`: load a non-default TOML file
 - `--json`: print machine-readable output
-- `--once`: enable non-interactive mode
+- `--once`: legacy compatibility flag for one-shot subcommand execution
 
 Subcommands:
 

@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn parses_auth_login() {
-        let cli = Cli::parse_from(["zitadel-tui", "--once", "auth", "login"]);
+        let cli = Cli::parse_from(["zitadel-tui", "auth", "login"]);
         assert!(matches!(
             cli.command,
             Some(Command::Auth(AuthCommand {
@@ -374,14 +374,7 @@ mod tests {
 
     #[test]
     fn parses_auth_login_with_client_id() {
-        let cli = Cli::parse_from([
-            "zitadel-tui",
-            "--once",
-            "auth",
-            "login",
-            "--client-id",
-            "my-client",
-        ]);
+        let cli = Cli::parse_from(["zitadel-tui", "auth", "login", "--client-id", "my-client"]);
         match cli.command {
             Some(Command::Auth(AuthCommand {
                 action: AuthAction::Login(args),
@@ -392,7 +385,7 @@ mod tests {
 
     #[test]
     fn parses_auth_logout() {
-        let cli = Cli::parse_from(["zitadel-tui", "--once", "auth", "logout"]);
+        let cli = Cli::parse_from(["zitadel-tui", "auth", "logout"]);
         assert!(matches!(
             cli.command,
             Some(Command::Auth(AuthCommand {
