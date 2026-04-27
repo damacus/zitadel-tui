@@ -94,6 +94,9 @@ Resolution order in practice:
 6. `service_account_file`
 7. Session token from `~/.config/zitadel-tui/tokens.json` (with auto-refresh)
 
+See [Authentication](authentication.md) for login commands and credential
+examples.
+
 ## Token cache
 
 `auth login` saves tokens to `~/.config/zitadel-tui/tokens.json` (mode `0600`).

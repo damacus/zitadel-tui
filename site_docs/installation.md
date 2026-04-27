@@ -78,6 +78,9 @@ zitadel-tui config show
 - Rust 1.89 or newer
 - A Zitadel personal access token or service account file
 
+See [Authentication](authentication.md) for supported CLI authentication
+methods.
+
 ## Development
 
 ```bash

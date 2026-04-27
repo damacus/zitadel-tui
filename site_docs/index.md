@@ -103,6 +103,7 @@ Templates for apps and users remain YAML-based.
 
 ## Task Guides
 
+- [Authenticate the CLI](authentication.md)
 - [Manage OIDC applications](oidc-apps.md)
 
 ## Requirements
