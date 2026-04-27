@@ -35,8 +35,9 @@ not provided by CLI, environment, or config.
 `device_client_id`
 : Client ID of the Zitadel native app used for `auth login` (OAuth Device Flow).
 Written automatically when you run `auth login` and enter the client ID
-interactively. Can be set in advance to skip the prompt. Not a secret — this is
-a public client with no `client_secret`.
+interactively, or when `apps create-native --device-code` returns a client ID.
+Can be set in advance to skip the prompt. Not a secret — this is a public client
+with no `client_secret`.
 
 ## Apps and users templates
 
@@ -134,6 +135,7 @@ Example: `zitadel-tui --config ./config.toml`
 
 - `auth status`, `auth logout`, and `config show` have no command-specific flags
 - `auth login` saves `device_client_id` to the canonical config path if you
-  enter it interactively, so subsequent logins only need `auth login` with no flags
+  enter it interactively. `apps create-native --device-code` also saves the
+  returned client ID. Subsequent logins only need `auth login` with no flags
 - The token cache is host-specific; running `auth login` against a different
   host overwrites the cache

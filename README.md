@@ -156,7 +156,7 @@ Example: `zitadel-tui apps create --name grafana --redirect-uris https://grafana
 : Create the app from a named entry in `apps_config_file`.
 
 `apps create-native`
-: Create a native OIDC application. With `--device-code`, the CLI configures JWT access tokens so the app can be used for `auth login`.
+: Create a native OIDC application. With `--device-code`, the CLI configures JWT access tokens and saves the returned client ID as `device_client_id` so the app can be used for `auth login`.
 Example: `zitadel-tui apps create-native --name zitadel-tui --device-code`
 
 `--name <NAME>`
@@ -257,8 +257,9 @@ Example: `zitadel-tui idps configure-google --client-id google-client-id --clien
 short code, waits for browser approval, then saves the access and refresh tokens
 to `~/.config/zitadel-tui/tokens.json`. Requires a Zitadel native app with the
 Device Code grant enabled and JWT access tokens configured for API access.
-The `apps create-native --device-code` path is intended for CLI login sessions.
-Example: `zitadel-tui --host https://zitadel.example.com auth login --client-id <CLIENT_ID>`
+The `apps create-native --device-code` path is intended for CLI login sessions
+and saves the returned client ID for future logins.
+Example: `zitadel-tui --host https://zitadel.example.com auth login`
 
 `--client-id <CLIENT_ID>`
 : The Zitadel native app client ID. If omitted and not set in config, the
@@ -346,7 +347,8 @@ Register a native app in your Zitadel instance with the **Device Code** grant
 type enabled and JWT access tokens enabled, then log in once:
 
 ```bash
-zitadel-tui --host https://zitadel.example.com auth login --client-id <CLIENT_ID>
+zitadel-tui --host https://zitadel.example.com apps create-native --name zitadel-tui --device-code
+zitadel-tui --host https://zitadel.example.com auth login
 ```
 
 The command prints a URL and a short code. Open the URL in your browser,
