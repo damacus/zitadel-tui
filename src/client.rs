@@ -287,6 +287,16 @@ impl ZitadelClient {
                      Check your credentials or run `auth login` to authenticate."
                 );
             }
+            if status == reqwest::StatusCode::FORBIDDEN
+                && crate::auth::is_authentication_required_response(&bytes)
+            {
+                bail!(
+                    "Zitadel API rejected the current token (403 Forbidden, AUTHZ-Kl3p0). \
+                     The token authenticates as an OIDC user, but Zitadel does not accept it \
+                     for Auth, Management, or Admin API access. Use a personal access token \
+                     or service account token for API operations."
+                );
+            }
             bail!("API request failed ({status})");
         }
 
@@ -383,6 +393,34 @@ mod tests {
         assert!(error.contains("403"));
         assert!(!error.contains("forbidden"));
         assert!(!error.contains("leaked"));
+    }
+
+    #[tokio::test]
+    async fn surfaces_authz_rejection_without_jwt_remediation() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/auth/v1/users/me")
+            .with_status(403)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                    "code": 7,
+                    "message": "authentication required",
+                    "details": [{"id": "AUTHZ-Kl3p0"}]
+                }"#,
+            )
+            .create_async()
+            .await;
+
+        let client =
+            ZitadelClient::new(server.url(), "header.payload.signature".to_string()).unwrap();
+        let error = client.whoami().await.unwrap_err().to_string();
+
+        mock.assert_async().await;
+        assert!(error.contains("AUTHZ-Kl3p0"));
+        assert!(error.contains("OIDC user"));
+        assert!(error.contains("API access"));
+        assert!(!error.contains("JWT access tokens"));
     }
 
     #[tokio::test]

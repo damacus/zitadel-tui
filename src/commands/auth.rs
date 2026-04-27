@@ -167,18 +167,18 @@ mod tests {
 
     #[allow(clippy::await_holding_lock)]
     #[tokio::test]
-    async fn persist_login_session_saves_cache_after_successful_auth_probe() {
+    async fn persist_login_session_saves_cache_after_successful_userinfo_probe() {
         let _guard = crate::test_support::env_lock();
         let cache_path = temp_cache_path();
         env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
 
         let mut server = Server::new_async().await;
-        let auth_probe = server
-            .mock("GET", "/auth/v1/users/me")
+        let userinfo_probe = server
+            .mock("GET", "/oidc/v1/userinfo")
             .match_header("authorization", "Bearer header.payload.signature")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"user":{"userId":"u1"}}"#)
+            .with_body(r#"{"sub":"u1","email":"admin@example.com"}"#)
             .create_async()
             .await;
 
@@ -196,7 +196,7 @@ mod tests {
         .await
         .unwrap();
 
-        auth_probe.assert_async().await;
+        userinfo_probe.assert_async().await;
         let cache = crate::token_cache::TokenCache::load()
             .unwrap()
             .expect("cache entry");
@@ -204,6 +204,61 @@ mod tests {
         assert_eq!(cache.refresh_token.as_deref(), Some("refresh-token"));
         assert_eq!(cache.client_id, "native-app-id");
         assert_eq!(cache.host, server.url());
+
+        env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
+        let _ = fs::remove_file(cache_path);
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn persist_login_session_allows_userinfo_valid_jwt_when_auth_api_rejects_it() {
+        let _guard = crate::test_support::env_lock();
+        let cache_path = temp_cache_path();
+        env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
+
+        let mut server = Server::new_async().await;
+        let userinfo_probe = server
+            .mock("GET", "/oidc/v1/userinfo")
+            .match_header("authorization", "Bearer header.payload.signature")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"sub":"355235054814759983","email":"dan.m.webb@gmail.com"}"#)
+            .create_async()
+            .await;
+
+        let auth_api_probe = server
+            .mock("GET", "/auth/v1/users/me")
+            .match_header("authorization", "Bearer header.payload.signature")
+            .with_status(403)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                    "code": 7,
+                    "message": "authentication required",
+                    "details": [{"id": "AUTHZ-Kl3p0"}]
+                }"#,
+            )
+            .expect(0)
+            .create_async()
+            .await;
+
+        let http = reqwest::Client::new();
+        persist_login_session(
+            &http,
+            &server.url(),
+            "native-app-id",
+            oidc::OidcTokens {
+                access_token: "header.payload.signature".to_string(),
+                refresh_token: Some("refresh-token".to_string()),
+                expires_in: 3600,
+            },
+        )
+        .await
+        .unwrap();
+
+        userinfo_probe.assert_async().await;
+        auth_api_probe.assert_async().await;
+        assert!(crate::token_cache::TokenCache::load().unwrap().is_some());
 
         env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
         let _ = fs::remove_file(cache_path);
@@ -240,14 +295,14 @@ mod tests {
 
     #[allow(clippy::await_holding_lock)]
     #[tokio::test]
-    async fn persist_login_session_rejects_auth_api_probe_failures_without_writing_cache() {
+    async fn persist_login_session_rejects_userinfo_probe_failures_without_writing_cache() {
         let _guard = crate::test_support::env_lock();
         let cache_path = temp_cache_path();
         env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
 
         let mut server = Server::new_async().await;
-        let auth_probe = server
-            .mock("GET", "/auth/v1/users/me")
+        let userinfo_probe = server
+            .mock("GET", "/oidc/v1/userinfo")
             .match_header("authorization", "Bearer header.payload.signature")
             .with_status(401)
             .with_header("content-type", "application/json")
@@ -270,8 +325,8 @@ mod tests {
         .unwrap_err()
         .to_string();
 
-        auth_probe.assert_async().await;
-        assert!(error.contains("session token validation failed"));
+        userinfo_probe.assert_async().await;
+        assert!(error.contains("OIDC userinfo validation failed"));
         assert!(crate::token_cache::TokenCache::load().unwrap().is_none());
 
         env::remove_var("ZITADEL_TUI_TOKEN_CACHE");

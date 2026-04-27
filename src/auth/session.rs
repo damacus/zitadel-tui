@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use reqwest::{Client, StatusCode};
+use reqwest::Client;
 
 const SESSION_TOKEN_REMEDIATION: &str = "OIDC device-login session tokens must be JWT access tokens that Zitadel APIs accept. Create or reconfigure a native app with Device Code and JWT access tokens, then run `auth login` again.";
 
@@ -11,7 +11,7 @@ pub async fn validate_login_session_token(
 ) -> Result<()> {
     ensure_session_token_is_usable("device-login session", access_token, client_id, zitadel_url)?;
 
-    let url = format!("{}/auth/v1/users/me", zitadel_url.trim_end_matches('/'));
+    let url = format!("{}/oidc/v1/userinfo", zitadel_url.trim_end_matches('/'));
     let response = client
         .get(url)
         .bearer_auth(access_token)
@@ -20,21 +20,12 @@ pub async fn validate_login_session_token(
         .await
         .context("failed to validate OIDC device-login session token")?;
     let status = response.status();
-    let body = response.bytes().await?;
 
     if status.is_success() {
         return Ok(());
     }
 
-    if status == StatusCode::FORBIDDEN && is_authentication_required_response(&body) {
-        bail!(session_token_error(
-            "device-login session",
-            client_id,
-            zitadel_url
-        ));
-    }
-
-    bail!("session token validation failed ({status})");
+    bail!("OIDC userinfo validation failed ({status})");
 }
 
 pub(crate) fn ensure_cached_session_is_usable(
@@ -72,7 +63,7 @@ fn token_looks_like_jwt(token: &str) -> bool {
     token.split('.').count() == 3
 }
 
-fn is_authentication_required_response(body: &[u8]) -> bool {
+pub(crate) fn is_authentication_required_response(body: &[u8]) -> bool {
     let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) else {
         return false;
     };

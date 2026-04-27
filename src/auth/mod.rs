@@ -9,4 +9,5 @@ pub struct ResolvedAuth {
 }
 
 pub use resolver::resolve_access_token;
+pub(crate) use session::is_authentication_required_response;
 pub use session::validate_login_session_token;
