@@ -4,17 +4,7 @@ use crate::tui::Record;
 
 pub(crate) fn map_app_record(app: Value) -> Record {
     let (kind, summary, detail) = if let Some(oidc_config) = app.get("oidcConfig") {
-        let kind = oidc_config
-            .get("authMethodType")
-            .and_then(|value| value.as_str())
-            .map(|value| {
-                if value == "OIDC_AUTH_METHOD_TYPE_NONE" {
-                    "public".to_string()
-                } else {
-                    "confidential".to_string()
-                }
-            })
-            .unwrap_or_else(|| "unknown".to_string());
+        let kind = classify_oidc_kind(Some(oidc_config));
         let client_id = oidc_config
             .get("clientId")
             .and_then(|value| value.as_str())
@@ -55,6 +45,68 @@ pub(crate) fn map_app_record(app: Value) -> Record {
         detail,
         changed_at: string_field(&app, "state", "unknown"),
     }
+}
+
+fn classify_oidc_kind(oidc_config: Option<&Value>) -> String {
+    let Some(oidc) = oidc_config else {
+        return "unknown".to_string();
+    };
+
+    if has_grant_type(oidc, "OIDC_GRANT_TYPE_DEVICE_CODE") {
+        return "device-code".to_string();
+    }
+
+    if string_field_value(oidc, "appType") == Some("OIDC_APP_TYPE_NATIVE") {
+        return "native".to_string();
+    }
+
+    if let Some(auth_method_type) = string_field_value(oidc, "authMethodType") {
+        if auth_method_type == "OIDC_AUTH_METHOD_TYPE_NONE" {
+            return "public".to_string();
+        }
+
+        return "confidential".to_string();
+    }
+
+    match string_field_value(oidc, "appType") {
+        Some("OIDC_APP_TYPE_USER_AGENT") => "public".to_string(),
+        Some("OIDC_APP_TYPE_WEB") => "confidential".to_string(),
+        Some(_) => "oidc".to_string(),
+        None if has_useful_oidc_fields(oidc) => "oidc".to_string(),
+        None => "unknown".to_string(),
+    }
+}
+
+fn has_grant_type(oidc: &Value, grant_type: &str) -> bool {
+    oidc.get("grantTypes")
+        .and_then(|value| value.as_array())
+        .is_some_and(|grant_types| {
+            grant_types
+                .iter()
+                .filter_map(|value| value.as_str())
+                .any(|value| value == grant_type)
+        })
+}
+
+fn has_useful_oidc_fields(oidc: &Value) -> bool {
+    has_string_field(oidc, "clientId")
+        || has_non_empty_array_field(oidc, "redirectUris")
+        || has_non_empty_array_field(oidc, "grantTypes")
+}
+
+fn has_string_field(value: &Value, key: &str) -> bool {
+    string_field_value(value, key).is_some_and(|value| !value.is_empty())
+}
+
+fn has_non_empty_array_field(value: &Value, key: &str) -> bool {
+    value
+        .get(key)
+        .and_then(|field| field.as_array())
+        .is_some_and(|values| !values.is_empty())
+}
+
+fn string_field_value<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value.get(key).and_then(|field| field.as_str())
 }
 
 pub(crate) fn map_user_record(user: Value) -> Record {

@@ -437,6 +437,76 @@ fn map_app_record_extracts_api_fields() {
 }
 
 #[test]
+fn map_app_record_uses_app_type_when_auth_method_missing() {
+    let app = serde_json::json!({
+        "id": "app-4",
+        "name": "docs",
+        "state": "ACTIVE",
+        "oidcConfig": {
+            "appType": "OIDC_APP_TYPE_WEB",
+            "clientId": "cid-4",
+            "redirectUris": ["https://docs.example.com/callback"],
+            "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
+        }
+    });
+    let record = map_app_record(app);
+    assert_eq!(record.kind, "confidential");
+    assert_eq!(record.detail, "cid-4");
+    assert_eq!(record.summary, "1 redirects");
+}
+
+#[test]
+fn map_app_record_keeps_oidc_kind_when_auth_method_and_app_type_missing() {
+    let app = serde_json::json!({
+        "id": "app-5",
+        "name": "dashboard",
+        "state": "ACTIVE",
+        "oidcConfig": {
+            "clientId": "cid-5",
+            "redirectUris": ["https://dashboard.example.com/callback"],
+            "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"]
+        }
+    });
+    let record = map_app_record(app);
+    assert_eq!(record.kind, "oidc");
+    assert_eq!(record.detail, "cid-5");
+    assert_eq!(record.summary, "1 redirects");
+}
+
+#[test]
+fn map_app_record_classifies_native_app_type() {
+    let app = serde_json::json!({
+        "id": "app-6",
+        "name": "cli",
+        "state": "ACTIVE",
+        "oidcConfig": {
+            "appType": "OIDC_APP_TYPE_NATIVE",
+            "clientId": "cid-6",
+            "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
+        }
+    });
+    let record = map_app_record(app);
+    assert_eq!(record.kind, "native");
+}
+
+#[test]
+fn map_app_record_classifies_device_code_grant() {
+    let app = serde_json::json!({
+        "id": "app-7",
+        "name": "headless-cli",
+        "state": "ACTIVE",
+        "oidcConfig": {
+            "appType": "OIDC_APP_TYPE_NATIVE",
+            "authMethodType": "OIDC_AUTH_METHOD_TYPE_NONE",
+            "clientId": "cid-7",
+            "grantTypes": ["OIDC_GRANT_TYPE_DEVICE_CODE"]
+        }
+    });
+    let record = map_app_record(app);
+    assert_eq!(record.kind, "device-code");
+}
+
+#[test]
 fn map_app_record_missing_oidc_config() {
     let app = serde_json::json!({"id": "app-4", "name": "plain"});
     let record = map_app_record(app);
