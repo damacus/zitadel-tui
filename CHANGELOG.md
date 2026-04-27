@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3](https://github.com/damacus/zitadel-tui/compare/v0.1.2...v0.1.3) (2026-04-27)
+
+
+### Features
+
+* add responsive TUI shell ([#80](https://github.com/damacus/zitadel-tui/issues/80)) ([da6a905](https://github.com/damacus/zitadel-tui/commit/da6a905c6270fff11a71b08d817f43eac9a4efc6))
+* OAuth2 Device Flow login/logout (auth login, auth logout) ([#63](https://github.com/damacus/zitadel-tui/issues/63)) ([4a974f9](https://github.com/damacus/zitadel-tui/commit/4a974f9639d951414593856ab1b3091513a870fa))
+
 ## [0.1.2](https://github.com/damacus/zitadel-tui/compare/v0.1.1...v0.1.2) (2026-04-02)
 
 
