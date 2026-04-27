@@ -73,7 +73,7 @@ zitadel-tui
 
 ### Headless mode
 
-Supplying a subcommand runs the existing one-shot command path. The legacy
+Supplying a subcommand runs the existing one-shot command path. The deprecated
 `--once` flag is still accepted for compatibility, but is no longer required.
 `--once` on its own is invalid because there is no subcommand to run.
 
@@ -125,8 +125,8 @@ Example: `zitadel-tui --config ./config.toml`
 Example: `zitadel-tui --json config show`
 
 `--once`
-: Legacy compatibility flag for one-shot subcommand execution. Subcommands now
-run one-shot without it.
+: Deprecated compatibility flag for one-shot subcommand execution. Subcommands
+now run one-shot without it.
 Example: `zitadel-tui --once users list`
 
 ### Command reference

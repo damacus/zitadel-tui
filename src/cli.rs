@@ -23,7 +23,13 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
-    #[arg(long, global = true)]
+    #[arg(
+        long,
+        global = true,
+        hide_short_help = true,
+        hide_long_help = true,
+        help = "Deprecated compatibility flag; subcommands run non-interactively by default"
+    )]
     pub once: bool,
 
     #[command(subcommand)]

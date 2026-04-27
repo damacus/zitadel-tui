@@ -67,7 +67,7 @@ Global options:
 - `--service-account-file`: use `ZITADEL_SERVICE_ACCOUNT_FILE`
 - `--config`: load a non-default TOML file
 - `--json`: print machine-readable output
-- `--once`: legacy compatibility flag for one-shot subcommand execution
+- `--once`: deprecated compatibility flag for one-shot subcommand execution
 
 Subcommands:
 

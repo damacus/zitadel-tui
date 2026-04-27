@@ -40,7 +40,7 @@ zitadel-tui auth --help
 zitadel-tui config --help
 ```
 
-Supplying a subcommand runs a one-shot command. The legacy `--once` flag still
+Supplying a subcommand runs a one-shot command. The deprecated `--once` flag still
 works, but is no longer required.
 
 ## Headless examples

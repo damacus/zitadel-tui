@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
 
 fn validate_cli(args: &Cli) -> Result<()> {
     if args.once && args.command.is_none() {
-        anyhow::bail!("--once requires a subcommand");
+        anyhow::bail!("--once is deprecated and only accepted with a subcommand");
     }
 
     Ok(())
