@@ -3,36 +3,56 @@ use serde_json::Value;
 use crate::tui::Record;
 
 pub(crate) fn map_app_record(app: Value) -> Record {
-    let kind = app
-        .get("oidcConfig")
-        .and_then(|oidc| oidc.get("authMethodType"))
-        .and_then(|value| value.as_str())
-        .map(|value| {
-            if value == "OIDC_AUTH_METHOD_TYPE_NONE" {
-                "public".to_string()
-            } else {
-                "confidential".to_string()
-            }
-        })
-        .unwrap_or_else(|| "unknown".to_string());
-    let client_id = app
-        .get("oidcConfig")
-        .and_then(|oidc| oidc.get("clientId"))
-        .and_then(|value| value.as_str())
-        .unwrap_or("missing-client-id")
-        .to_string();
-    let redirect_count = app
-        .get("oidcConfig")
-        .and_then(|oidc| oidc.get("redirectUris"))
-        .and_then(|value| value.as_array())
-        .map(|uris| uris.len())
-        .unwrap_or(0);
+    let (kind, summary, detail) = if let Some(oidc_config) = app.get("oidcConfig") {
+        let kind = oidc_config
+            .get("authMethodType")
+            .and_then(|value| value.as_str())
+            .map(|value| {
+                if value == "OIDC_AUTH_METHOD_TYPE_NONE" {
+                    "public".to_string()
+                } else {
+                    "confidential".to_string()
+                }
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        let client_id = oidc_config
+            .get("clientId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("missing-client-id")
+            .to_string();
+        let redirect_count = oidc_config
+            .get("redirectUris")
+            .and_then(|value| value.as_array())
+            .map(|uris| uris.len())
+            .unwrap_or(0);
+
+        (kind, format!("{redirect_count} redirects"), client_id)
+    } else if let Some(api_config) = app.get("apiConfig") {
+        let client_id = api_config
+            .get("clientId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("missing-client-id")
+            .to_string();
+        let auth_method = api_config
+            .get("authMethodType")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown-auth-method")
+            .to_string();
+
+        ("api".to_string(), auth_method, client_id)
+    } else {
+        (
+            "unknown".to_string(),
+            "0 redirects".to_string(),
+            "missing-client-id".to_string(),
+        )
+    };
     Record {
         id: string_field(&app, "id", "missing-id"),
         name: string_field(&app, "name", "unnamed"),
         kind,
-        summary: format!("{redirect_count} redirects"),
-        detail: client_id,
+        summary,
+        detail,
         changed_at: string_field(&app, "state", "unknown"),
     }
 }
