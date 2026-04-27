@@ -95,6 +95,13 @@ impl TuiConductor {
         };
 
         self.auth_label = auth.source.to_string();
+        if auth.is_oidc_session() {
+            self.auth_label = "Session token (OIDC only)".to_string();
+            self.client = None;
+            self.setup_required = true;
+            return;
+        }
+
         self.setup_required = false;
 
         let Ok(client) = ZitadelClient::new(self.host.clone(), auth.token) else {

@@ -13,6 +13,7 @@ pub async fn authenticated_client(args: &Cli, config: &AppConfig) -> Result<Zita
         config,
     )
     .await?;
+    auth.ensure_api_credential()?;
     ZitadelClient::new(host, auth.token)
 }
 
@@ -61,7 +62,18 @@ pub async fn resolved_project_id(
 mod tests {
     use super::*;
     use clap::Parser;
-    use std::env;
+    use std::{
+        env, fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temp_cache_path() -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        env::temp_dir().join(format!("zitadel-tui-shared-test-tokens-{unique}.json"))
+    }
 
     fn clear_host_env() -> Option<String> {
         let original = env::var("ZITADEL_URL").ok();
@@ -133,5 +145,52 @@ mod tests {
 
         restore_host_env(original);
         assert!(error.contains("Zitadel URL is required"));
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn authenticated_client_rejects_oidc_session_tokens_for_api_commands() {
+        let _guard = crate::test_support::env_lock();
+        let original_host = clear_host_env();
+        let original_token = env::var("ZITADEL_TOKEN").ok();
+        let original_sa = env::var("ZITADEL_SERVICE_ACCOUNT_FILE").ok();
+        env::remove_var("ZITADEL_TOKEN");
+        env::remove_var("ZITADEL_SERVICE_ACCOUNT_FILE");
+        let cache_path = temp_cache_path();
+        env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        crate::token_cache::TokenCache {
+            access_token: "header.payload.signature".to_string(),
+            refresh_token: Some("refresh-token".to_string()),
+            expires_at: Some(now + 3600),
+            client_id: "native-client".to_string(),
+            host: "https://zitadel.example.com".to_string(),
+        }
+        .save()
+        .unwrap();
+
+        let args = Cli::parse_from(["zitadel-tui", "--host", "https://zitadel.example.com"]);
+        let error = match authenticated_client(&args, &AppConfig::default()).await {
+            Ok(_) => panic!("expected OIDC session token to be rejected for API commands"),
+            Err(error) => error.to_string(),
+        };
+
+        env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
+        let _ = fs::remove_file(cache_path);
+        restore_host_env(original_host);
+        if let Some(token) = original_token {
+            env::set_var("ZITADEL_TOKEN", token);
+        }
+        if let Some(path) = original_sa {
+            env::set_var("ZITADEL_SERVICE_ACCOUNT_FILE", path);
+        }
+
+        assert!(error.contains("requires Zitadel API credentials"));
+        assert!(error.contains("auth status"));
+        assert!(error.contains("personal access token"));
     }
 }

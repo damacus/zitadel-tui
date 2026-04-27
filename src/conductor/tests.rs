@@ -17,6 +17,18 @@ use crate::{
     config::{AppConfig, AppTemplate, TemplatesFile, UserTemplate},
     tui::{CanvasMode, FormState, PendingAction, Record, ResourceKind},
 };
+use std::{
+    env, fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+fn temp_cache_path() -> std::path::PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    env::temp_dir().join(format!("zitadel-tui-conductor-test-tokens-{unique}.json"))
+}
 
 #[test]
 fn split_csv_filters_empty_entries() {
@@ -148,6 +160,66 @@ async fn refresh_runtime_loads_all_record_types() {
     assert_eq!(conductor.idp_records.len(), 1);
     assert_eq!(conductor.project, "project-1");
     assert_eq!(conductor.auth_label, "config PAT");
+}
+
+#[allow(clippy::await_holding_lock)]
+#[tokio::test]
+async fn bootstrap_marks_cached_oidc_session_as_api_limited() {
+    let _guard = crate::test_support::env_lock();
+    let original_token = env::var("ZITADEL_TOKEN").ok();
+    let original_sa = env::var("ZITADEL_SERVICE_ACCOUNT_FILE").ok();
+    env::remove_var("ZITADEL_TOKEN");
+    env::remove_var("ZITADEL_SERVICE_ACCOUNT_FILE");
+    let cache_path = temp_cache_path();
+    env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    crate::token_cache::TokenCache {
+        access_token: "header.payload.signature".to_string(),
+        refresh_token: Some("refresh-token".to_string()),
+        expires_at: Some(now + 3600),
+        client_id: "native-client".to_string(),
+        host: "https://zitadel.example.com".to_string(),
+    }
+    .save()
+    .unwrap();
+
+    let conductor = TuiConductor::bootstrap(
+        Cli {
+            host: Some("https://zitadel.example.com".to_string()),
+            project_id: None,
+            token: None,
+            service_account_file: None,
+            config: None,
+            json: false,
+            once: false,
+            command: None,
+        },
+        AppConfig {
+            zitadel_url: Some("https://zitadel.example.com".to_string()),
+            ..AppConfig::default()
+        },
+    )
+    .await;
+
+    env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
+    let _ = fs::remove_file(cache_path);
+    if let Some(token) = original_token {
+        env::set_var("ZITADEL_TOKEN", token);
+    }
+    if let Some(path) = original_sa {
+        env::set_var("ZITADEL_SERVICE_ACCOUNT_FILE", path);
+    }
+
+    assert_eq!(conductor.auth_label, "Session token (OIDC only)");
+    assert!(conductor.setup_required);
+    assert!(conductor.client.is_none());
+    assert!(conductor.app_records.is_empty());
+    assert!(conductor.user_records.is_empty());
+    assert!(conductor.idp_records.is_empty());
 }
 
 #[tokio::test]

@@ -87,7 +87,7 @@ pub async fn execute_auth_command(
                 config,
             )
             .await?;
-            let (user_id, login_name) = if auth.source.starts_with("session token") {
+            let (user_id, login_name) = if auth.is_oidc_session() {
                 let userinfo = session_userinfo(&http, &host, &auth.token).await?;
                 auth_status_userinfo_identity(&userinfo)
             } else {
