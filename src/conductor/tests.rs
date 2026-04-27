@@ -440,16 +440,53 @@ fn map_user_record_extracts_human_fields() {
     let record = map_user_record(user);
     assert_eq!(record.id, "user-1");
     assert_eq!(record.name, "admin");
-    assert_eq!(record.kind, "ACTIVE");
+    assert_eq!(record.kind, "human ACTIVE");
     assert_eq!(record.summary, "admin@example.com");
     assert_eq!(record.detail, "Admin User");
     assert_eq!(record.changed_at, "loaded");
 }
 
 #[test]
-fn map_user_record_missing_human_fields() {
-    let user = serde_json::json!({"id": "user-2", "userName": "bot"});
+fn map_user_record_extracts_machine_fields() {
+    let user = serde_json::json!({
+        "id": "user-2",
+        "userName": "service-account",
+        "state": "ACTIVE",
+        "preferredLoginName": "service-account@example.com",
+        "loginNames": ["service-account@example.com", "service-account"],
+        "machine": {
+            "name": "cluster service account"
+        }
+    });
     let record = map_user_record(user);
+    assert_eq!(record.id, "user-2");
+    assert_eq!(record.name, "cluster service account");
+    assert_eq!(record.kind, "machine ACTIVE");
+    assert_eq!(record.summary, "service-account@example.com");
+    assert_eq!(record.detail, "machine user");
+    assert_eq!(record.changed_at, "loaded");
+}
+
+#[test]
+fn map_user_record_machine_falls_back_to_login_name() {
+    let user = serde_json::json!({
+        "id": "user-3",
+        "userName": "worker",
+        "loginNames": ["worker@example.com"],
+        "machine": {}
+    });
+    let record = map_user_record(user);
+    assert_eq!(record.name, "worker");
+    assert_eq!(record.kind, "machine unknown");
+    assert_eq!(record.summary, "worker@example.com");
+    assert_eq!(record.detail, "machine user");
+}
+
+#[test]
+fn map_user_record_missing_human_fields() {
+    let user = serde_json::json!({"id": "user-4", "userName": "bot"});
+    let record = map_user_record(user);
+    assert_eq!(record.kind, "human unknown");
     assert_eq!(record.summary, "no email");
     assert_eq!(record.detail, "human user");
 }
