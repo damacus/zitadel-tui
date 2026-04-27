@@ -11,6 +11,7 @@ pub use copy::{focus_label, pending_label, resource_label, selection_title, stat
 pub use render::draw;
 #[allow(unused_imports)]
 pub use types::{
-    default_setup_form, Action, App, CanvasMode, ConfirmState, FieldKind, Focus, FormField,
-    FormState, MessageState, PendingAction, Record, Resource, ResourceKind, TuiBootstrap,
+    default_setup_form, Action, App, AppCommand, CanvasMode, ConfirmState, FieldKind, Focus,
+    FormField, FormState, MessageState, PendingAction, Record, Resource, ResourceKind,
+    TuiBootstrap,
 };

@@ -28,7 +28,7 @@ pub struct Action {
     pub hotkey: &'static str,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Record {
     pub id: String,
     pub name: String,
@@ -125,6 +125,19 @@ pub enum FieldKind {
     Toggle,
     Choice(Vec<String>),
     Checkbox,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AppCommand {
+    Noop,
+    Quit,
+    BeginAction {
+        resource: ResourceKind,
+        action_index: usize,
+        selected_record: Option<Record>,
+    },
+    SubmitForm(FormState),
+    Confirm(PendingAction),
 }
 
 #[derive(Debug)]

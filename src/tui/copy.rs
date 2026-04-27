@@ -148,6 +148,7 @@ pub fn pending_label(pending: &PendingAction) -> &'static str {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn selection_title(app: &App) -> &'static str {
     match app.active_resource() {
         ResourceKind::Applications => "existing applications",
@@ -177,6 +178,7 @@ pub fn focus_label(focus: Focus) -> &'static str {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn status_mark(app: &App) -> &'static str {
     if app.setup_required {
         "!"
