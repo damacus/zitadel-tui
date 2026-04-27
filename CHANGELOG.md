@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/damacus/zitadel-tui/compare/v0.1.5...v0.1.6) (2026-04-27)
+
+
+### Bug Fixes
+
+* **auth:** use userinfo for session status ([f2e46d1](https://github.com/damacus/zitadel-tui/commit/f2e46d115839d5ab965524c11c3b1c2c29966916))
+
 ## [0.1.5](https://github.com/damacus/zitadel-tui/compare/v0.1.4...v0.1.5) (2026-04-27)
 
 
