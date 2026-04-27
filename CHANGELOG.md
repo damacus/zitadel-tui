@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.4](https://github.com/damacus/zitadel-tui/compare/v0.1.3...v0.1.4) (2026-04-27)
+
+
+### Bug Fixes
+
+* allow subcommands without once ([3625aba](https://github.com/damacus/zitadel-tui/commit/3625abab84e6b0bcc3e4f64e1954c25b8cefce7f))
+* classify API app records ([#91](https://github.com/damacus/zitadel-tui/issues/91)) ([e10ac65](https://github.com/damacus/zitadel-tui/commit/e10ac6587e0d37852b99139bbc8fe61eade98e85))
+* classify oidc apps without auth method ([444ac75](https://github.com/damacus/zitadel-tui/commit/444ac75fc8ec5992df76c0c2b3321e9d6283bc3e)), closes [#88](https://github.com/damacus/zitadel-tui/issues/88)
+* handle machine user records ([#92](https://github.com/damacus/zitadel-tui/issues/92)) ([dbbfa8e](https://github.com/damacus/zitadel-tui/commit/dbbfa8e5289b759723838d8192a6e59febdf4257))
+* hide deprecated once flag ([898cd85](https://github.com/damacus/zitadel-tui/commit/898cd8516cd430a98a299ca661f2de8a800af200))
+* read service account auth status id ([#95](https://github.com/damacus/zitadel-tui/issues/95)) ([dd87e13](https://github.com/damacus/zitadel-tui/commit/dd87e131d18785e22157ecd43edb0ad1d34170f2))
+* remember device login client id ([#85](https://github.com/damacus/zitadel-tui/issues/85)) ([dcb4972](https://github.com/damacus/zitadel-tui/commit/dcb497273ade344fa44566c5378329d3767611ec))
+* show empty list feedback ([#93](https://github.com/damacus/zitadel-tui/issues/93)) ([06ec567](https://github.com/damacus/zitadel-tui/commit/06ec56746066ec7edc01cfa0efe497a95bfe952e))
+
 ## [0.1.3](https://github.com/damacus/zitadel-tui/compare/v0.1.2...v0.1.3) (2026-04-27)
 
 

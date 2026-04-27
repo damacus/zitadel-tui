@@ -1,6 +1,6 @@
 [package]
 name = "zitadel-tui"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "A terminal UI for managing Zitadel resources"
 license = "MIT"
