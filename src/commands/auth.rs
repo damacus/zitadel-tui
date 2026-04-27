@@ -87,9 +87,14 @@ pub async fn execute_auth_command(
                 config,
             )
             .await?;
-            let client = ZitadelClient::new(host.clone(), auth.token)?;
-            let me = client.whoami().await?;
-            let (user_id, login_name) = auth_status_identity(&me);
+            let (user_id, login_name) = if auth.source.starts_with("session token") {
+                let userinfo = session_userinfo(&http, &host, &auth.token).await?;
+                auth_status_userinfo_identity(&userinfo)
+            } else {
+                let client = ZitadelClient::new(host.clone(), auth.token)?;
+                let me = client.whoami().await?;
+                auth_status_api_identity(&me)
+            };
             Ok(serde_json::json!({
                 "host": host,
                 "auth_source": auth.source,
@@ -100,7 +105,26 @@ pub async fn execute_auth_command(
     }
 }
 
-fn auth_status_identity(me: &Value) -> (Value, Value) {
+async fn session_userinfo(http: &reqwest::Client, host: &str, access_token: &str) -> Result<Value> {
+    let url = format!("{}/oidc/v1/userinfo", host.trim_end_matches('/'));
+    let response = http
+        .get(url)
+        .bearer_auth(access_token)
+        .header("Accept", "application/json")
+        .send()
+        .await?;
+    let status = response.status();
+    let bytes = response.bytes().await?;
+
+    if !status.is_success() {
+        anyhow::bail!("OIDC userinfo request failed ({status})");
+    }
+
+    serde_json::from_slice(&bytes)
+        .map_err(|error| anyhow::anyhow!("failed to decode OIDC userinfo response: {error}"))
+}
+
+fn auth_status_api_identity(me: &Value) -> (Value, Value) {
     let user = me.get("user").unwrap_or(&Value::Null);
     let user_id = user
         .get("userId")
@@ -111,6 +135,19 @@ fn auth_status_identity(me: &Value) -> (Value, Value) {
         .get("preferredLoginName")
         .or_else(|| user.get("userName"))
         .or_else(|| user.get("loginName"))
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    (user_id, login_name)
+}
+
+fn auth_status_userinfo_identity(userinfo: &Value) -> (Value, Value) {
+    let user_id = userinfo.get("sub").cloned().unwrap_or(Value::Null);
+    let login_name = userinfo
+        .get("preferred_username")
+        .or_else(|| userinfo.get("email"))
+        .or_else(|| userinfo.get("login_name"))
+        .or_else(|| userinfo.get("name"))
         .cloned()
         .unwrap_or(Value::Null);
 
@@ -343,12 +380,18 @@ mod tests {
         env::set_var("ZITADEL_TUI_TOKEN_CACHE", &cache_path);
 
         let mut server = Server::new_async().await;
-        let _whoami = server
-            .mock("GET", "/auth/v1/users/me")
+        let userinfo = server
+            .mock("GET", "/oidc/v1/userinfo")
             .match_header("authorization", "Bearer header.payload.signature")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"user":{"userId":"u-123","preferredLoginName":"admin@example.com"}}"#)
+            .with_body(r#"{"sub":"u-123","preferred_username":"admin@example.com"}"#)
+            .create_async()
+            .await;
+        let auth_api = server
+            .mock("GET", "/auth/v1/users/me")
+            .match_header("authorization", "Bearer header.payload.signature")
+            .expect(0)
             .create_async()
             .await;
 
@@ -375,6 +418,8 @@ mod tests {
             .await
             .unwrap();
 
+        userinfo.assert_async().await;
+        auth_api.assert_async().await;
         assert_eq!(result["host"], server.url());
         assert_eq!(result["auth_source"], "session token");
         assert_eq!(result["user_id"], "u-123");
