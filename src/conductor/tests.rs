@@ -417,8 +417,28 @@ fn map_app_record_confidential_auth_method() {
 }
 
 #[test]
+fn map_app_record_extracts_api_fields() {
+    let app = serde_json::json!({
+        "id": "app-3",
+        "name": "Management API",
+        "state": "ACTIVE",
+        "apiConfig": {
+            "authMethodType": "API_AUTH_METHOD_TYPE_PRIVATE_KEY_JWT",
+            "clientId": "api-client-1"
+        }
+    });
+    let record = map_app_record(app);
+    assert_eq!(record.id, "app-3");
+    assert_eq!(record.name, "Management API");
+    assert_eq!(record.kind, "api");
+    assert_eq!(record.detail, "api-client-1");
+    assert_eq!(record.summary, "API_AUTH_METHOD_TYPE_PRIVATE_KEY_JWT");
+    assert_eq!(record.changed_at, "ACTIVE");
+}
+
+#[test]
 fn map_app_record_missing_oidc_config() {
-    let app = serde_json::json!({"id": "app-3", "name": "plain"});
+    let app = serde_json::json!({"id": "app-4", "name": "plain"});
     let record = map_app_record(app);
     assert_eq!(record.kind, "unknown");
     assert_eq!(record.detail, "missing-client-id");
