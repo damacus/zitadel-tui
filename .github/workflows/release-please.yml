@@ -61,7 +61,7 @@ jobs:
   build-binaries:
     name: Build release binary
     needs: release-context
-    if: ${{ needs.release-context.outputs.should_publish == 'true' }}
+    if: ${{ always() && needs.release-context.outputs.should_publish == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -91,7 +91,7 @@ jobs:
   github-release:
     name: Create GitHub Release
     needs: [release-context, build-binaries]
-    if: ${{ needs.release-context.outputs.should_publish == 'true' }}
+    if: ${{ always() && needs.release-context.outputs.should_publish == 'true' && needs.build-binaries.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download release artifact
@@ -113,7 +113,7 @@ jobs:
 
   docker:
     needs: release-context
-    if: ${{ needs.release-context.outputs.should_publish == 'true' }}
+    if: ${{ always() && needs.release-context.outputs.should_publish == 'true' }}
     runs-on: ubuntu-latest
     env:
       REGISTRY: ghcr.io
@@ -162,7 +162,7 @@ jobs:
   publish-crate:
     name: Publish to crates.io
     needs: release-context
-    if: ${{ needs.release-context.outputs.should_publish == 'true' }}
+    if: ${{ always() && needs.release-context.outputs.should_publish == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
