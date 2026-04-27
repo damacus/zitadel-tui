@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/damacus/zitadel-tui/compare/v0.1.6...v0.1.7) (2026-04-27)
+
+
+### Bug Fixes
+
+* **auth:** reject OIDC sessions for API commands ([24ec9a8](https://github.com/damacus/zitadel-tui/commit/24ec9a893afcf10af8143b504f398c77c887a832))
+
 ## [0.1.6](https://github.com/damacus/zitadel-tui/compare/v0.1.5...v0.1.6) (2026-04-27)
 
 
