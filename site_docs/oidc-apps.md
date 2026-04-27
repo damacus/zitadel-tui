@@ -71,6 +71,9 @@ Create a native app for device-flow login:
 zitadel-tui apps create-native --name zitadel-tui --device-code
 ```
 
+When `--device-code` is used, the returned native app client ID is saved as
+`device_client_id` for future `auth login` runs.
+
 Delete an app:
 
 ```bash
@@ -118,7 +121,7 @@ For the smoothest path today:
 1. Use a PAT if you already have one.
 2. Use a service-account file if this is automation or shared admin tooling.
 3. Use device flow only after creating a native app with `--device-code`, then
-   run `zitadel-tui auth login --client-id <CLIENT_ID>`.
+   run `zitadel-tui auth login`.
 
 If `auth login` succeeds in the browser but still fails in the CLI, the usual
 cause is that the native app is returning an access token format the Zitadel

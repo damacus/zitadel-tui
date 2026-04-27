@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use reqwest::{Client, StatusCode};
 
-const SESSION_TOKEN_REMEDIATION: &str = "OIDC device-login session tokens must be JWT access tokens that Zitadel APIs accept. Reconfigure the native app to enable Device Code and JWT access tokens, then run `auth login` again, or use `auth logout` to clear the cached session.";
+const SESSION_TOKEN_REMEDIATION: &str = "OIDC device-login session tokens must be JWT access tokens that Zitadel APIs accept. Create or reconfigure a native app with Device Code and JWT access tokens, then run `auth login` again.";
 
 pub async fn validate_login_session_token(
     client: &Client,
@@ -9,7 +9,7 @@ pub async fn validate_login_session_token(
     client_id: &str,
     access_token: &str,
 ) -> Result<()> {
-    ensure_cached_session_is_usable(access_token, client_id, zitadel_url)?;
+    ensure_session_token_is_usable("device-login session", access_token, client_id, zitadel_url)?;
 
     let url = format!("{}/auth/v1/users/me", zitadel_url.trim_end_matches('/'));
     let response = client
@@ -27,7 +27,11 @@ pub async fn validate_login_session_token(
     }
 
     if status == StatusCode::FORBIDDEN && is_authentication_required_response(&body) {
-        bail!(session_token_error(client_id, zitadel_url));
+        bail!(session_token_error(
+            "device-login session",
+            client_id,
+            zitadel_url
+        ));
     }
 
     bail!("session token validation failed ({status})");
@@ -38,20 +42,29 @@ pub(crate) fn ensure_cached_session_is_usable(
     client_id: &str,
     host: &str,
 ) -> Result<()> {
+    ensure_session_token_is_usable("cached device-login session", access_token, client_id, host)
+}
+
+fn ensure_session_token_is_usable(
+    label: &str,
+    access_token: &str,
+    client_id: &str,
+    host: &str,
+) -> Result<()> {
     if token_looks_like_jwt(access_token) {
         return Ok(());
     }
 
-    bail!(session_token_error(client_id, host));
+    bail!(session_token_error(label, client_id, host));
 }
 
 pub(crate) fn same_host(left: &str, right: &str) -> bool {
     left.trim_end_matches('/') == right.trim_end_matches('/')
 }
 
-fn session_token_error(client_id: &str, host: &str) -> String {
+fn session_token_error(label: &str, client_id: &str, host: &str) -> String {
     format!(
-        "cached device-login session for client `{client_id}` on {host} is not usable for Zitadel APIs. {SESSION_TOKEN_REMEDIATION}"
+        "{label} for client `{client_id}` on {host} is not usable for Zitadel APIs. {SESSION_TOKEN_REMEDIATION}"
     )
 }
 
