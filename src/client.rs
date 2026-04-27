@@ -100,7 +100,10 @@ impl ZitadelClient {
         name: &str,
         device_code: bool,
     ) -> Result<Value> {
-        let mut grant_types = vec!["OIDC_GRANT_TYPE_REFRESH_TOKEN"];
+        let mut grant_types = vec![
+            "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
+            "OIDC_GRANT_TYPE_REFRESH_TOKEN",
+        ];
         if device_code {
             grant_types.push("OIDC_GRANT_TYPE_DEVICE_CODE");
         }
@@ -391,6 +394,7 @@ mod tests {
             .match_body(Matcher::PartialJson(json!({
                 "name": "zitadel-tui",
                 "grantTypes": [
+                    "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
                     "OIDC_GRANT_TYPE_REFRESH_TOKEN",
                     "OIDC_GRANT_TYPE_DEVICE_CODE"
                 ],
@@ -420,7 +424,10 @@ mod tests {
             .match_header("authorization", "Bearer test-token")
             .match_body(Matcher::PartialJson(json!({
                 "name": "desktop-app",
-                "grantTypes": ["OIDC_GRANT_TYPE_REFRESH_TOKEN"],
+                "grantTypes": [
+                    "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
+                    "OIDC_GRANT_TYPE_REFRESH_TOKEN"
+                ],
                 "accessTokenType": "OIDC_TOKEN_TYPE_BEARER"
             })))
             .with_status(200)

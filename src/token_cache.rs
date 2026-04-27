@@ -85,7 +85,6 @@ fn token_cache_default_path() -> Result<PathBuf> {
         .map(|d| d.join("zitadel-tui").join("tokens.json"))
         .context("could not determine config directory")
 }
-
 #[cfg(unix)]
 fn write_secure_file(path: &std::path::Path, contents: &str) -> Result<()> {
     use std::io::Write;

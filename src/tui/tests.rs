@@ -1,8 +1,12 @@
-use super::render::{
-    cycle_choice, default_setup_form, focus_label, is_enabled, pending_label, render_form_line,
-    resource_label, selection_title, status_mark, toggle_field,
+use super::{
+    copy::{focus_label, pending_label, resource_label, selection_title, status_mark},
+    state::{cycle_choice, is_enabled, toggle_field},
+    types::{
+        default_setup_form, App, CanvasMode, FieldKind, Focus, FormField, FormState, MessageState,
+        PendingAction, Record, ResourceKind, TuiBootstrap,
+    },
+    widgets::render_form_line,
 };
-use super::*;
 
 fn test_app() -> App {
     App::from_bootstrap(TuiBootstrap {

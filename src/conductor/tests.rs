@@ -1,12 +1,22 @@
-use super::helpers::*;
-use super::TuiConductor;
+use mockito::Matcher;
+
+use super::{
+    forms::{
+        bool_value, checkbox_enabled, checkbox_field, choice_field, form_value, optional_value,
+        secret_field, split_csv, text_field, toggle_field,
+    },
+    records::{
+        app_creation_summary, map_app_record, map_idp_record, map_user_record, string_field,
+    },
+    support::error_mode,
+    TuiConductor,
+};
 use crate::{
     cli::Cli,
     client::ZitadelClient,
     config::{AppConfig, AppTemplate, TemplatesFile, UserTemplate},
     tui::{CanvasMode, FormState, PendingAction, Record, ResourceKind},
 };
-use mockito::Matcher;
 
 #[test]
 fn split_csv_filters_empty_entries() {
@@ -231,7 +241,7 @@ async fn quick_setup_apps_batches_creates_and_refreshes() {
         pending: PendingAction::QuickSetupApplications,
     };
 
-    let mode = conductor.quick_setup_apps(&form).await;
+    let mode = conductor.submit_form(&form).await;
 
     create_grafana.assert_async().await;
     create_mealie.assert_async().await;
@@ -360,7 +370,7 @@ async fn quick_setup_users_batches_creates_and_grants_admins() {
         pending: PendingAction::QuickSetupUsers,
     };
 
-    let mode = conductor.quick_setup_users(&form).await;
+    let mode = conductor.submit_form(&form).await;
 
     create_admin.assert_async().await;
     create_user.assert_async().await;
@@ -614,8 +624,8 @@ fn toggle_field_constructor() {
 
 #[test]
 fn choice_field_constructor() {
-    let opts = vec!["a".to_string(), "b".to_string()];
-    let field = choice_field("key", "Label", "a", opts.clone(), "help");
+    let options = vec!["a".to_string(), "b".to_string()];
+    let field = choice_field("key", "Label", "a", options, "help");
     assert!(matches!(field.kind, crate::tui::FieldKind::Choice(_)));
     assert_eq!(field.value, "a");
 }
