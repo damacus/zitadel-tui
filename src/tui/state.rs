@@ -1,14 +1,9 @@
-use ratatui::text::Line;
+use crossterm::event::KeyCode;
 
-use super::{
-    copy::{
-        browse_lines, browse_meta, browse_review_lines, browse_title, confirm_review_lines,
-        form_review_lines, message_review_lines,
-    },
-    types::{
-        default_setup_form, App, CanvasMode, Focus, FormField, FormState, Resource, ResourceKind,
-        TuiBootstrap, APPLICATION_ACTIONS, AUTH_ACTIONS, CONFIG_ACTIONS, IDP_ACTIONS, USER_ACTIONS,
-    },
+use super::types::{
+    default_setup_form, App, AppCommand, CanvasMode, Focus, FormField, FormState, Resource,
+    ResourceKind, TuiBootstrap, APPLICATION_ACTIONS, AUTH_ACTIONS, CONFIG_ACTIONS, IDP_ACTIONS,
+    USER_ACTIONS,
 };
 
 impl App {
@@ -206,31 +201,83 @@ impl App {
         self.show_inspector = !self.show_inspector;
     }
 
+    pub fn handle_key(&mut self, key: KeyCode) -> AppCommand {
+        match key {
+            KeyCode::Char('q') => AppCommand::Quit,
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.move_forward();
+                AppCommand::Noop
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.move_backward();
+                AppCommand::Noop
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                self.move_left();
+                AppCommand::Noop
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                self.move_right();
+                AppCommand::Noop
+            }
+            KeyCode::Char('i') => {
+                self.toggle_inspector();
+                AppCommand::Noop
+            }
+            KeyCode::Char('n') => {
+                self.set_focus(Focus::Actions);
+                AppCommand::Noop
+            }
+            KeyCode::Char('g') => {
+                self.set_focus(Focus::Resources);
+                AppCommand::Noop
+            }
+            KeyCode::Enter => self.handle_enter(),
+            KeyCode::Esc => {
+                self.handle_escape();
+                AppCommand::Noop
+            }
+            KeyCode::Backspace => {
+                if self.is_form_editing() {
+                    self.form_backspace();
+                }
+                AppCommand::Noop
+            }
+            KeyCode::Char(' ') => {
+                if self.is_form_editing() {
+                    self.form_toggle_or_cycle(true);
+                }
+                AppCommand::Noop
+            }
+            KeyCode::Char(ch) => {
+                if self.is_form_editing() {
+                    self.form_insert_char(ch);
+                }
+                AppCommand::Noop
+            }
+            KeyCode::Tab => {
+                self.advance_focus();
+                AppCommand::Noop
+            }
+            KeyCode::BackTab => {
+                self.reverse_focus();
+                AppCommand::Noop
+            }
+            _ => AppCommand::Noop,
+        }
+    }
+
     pub fn advance_focus(&mut self) {
-        self.focus = match self.focus {
-            Focus::Resources => Focus::Actions,
-            Focus::Actions => Focus::Form,
-            Focus::Form => Focus::Records,
-            Focus::Records => Focus::Resources,
-        };
+        self.cycle_focus(true);
     }
 
     pub fn reverse_focus(&mut self) {
-        self.focus = match self.focus {
-            Focus::Resources => Focus::Records,
-            Focus::Actions => Focus::Resources,
-            Focus::Form => Focus::Actions,
-            Focus::Records => Focus::Form,
-        };
+        self.cycle_focus(false);
     }
 
     pub fn set_canvas_mode(&mut self, canvas_mode: CanvasMode) {
         self.canvas_mode = canvas_mode;
-        self.focus = match self.canvas_mode {
-            CanvasMode::Browse => Focus::Resources,
-            CanvasMode::EditForm(_) | CanvasMode::Setup(_) => Focus::Form,
-            CanvasMode::Confirm(_) | CanvasMode::Success(_) | CanvasMode::Error(_) => Focus::Form,
-        };
+        self.focus = self.focus_order()[0];
     }
 
     pub fn reset_to_browse(&mut self) {
@@ -314,52 +361,6 @@ impl App {
         }
     }
 
-    pub fn message_lines(&self) -> Vec<String> {
-        match &self.canvas_mode {
-            CanvasMode::Browse => browse_lines(self),
-            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => form
-                .fields
-                .iter()
-                .enumerate()
-                .map(|(index, field)| {
-                    super::widgets::render_form_line(field, index == form.selected_field)
-                })
-                .collect(),
-            CanvasMode::Confirm(confirm) => confirm.lines.clone(),
-            CanvasMode::Success(message) | CanvasMode::Error(message) => message.lines.clone(),
-        }
-    }
-
-    pub fn canvas_title(&self) -> String {
-        match &self.canvas_mode {
-            CanvasMode::Browse => browse_title(self).to_string(),
-            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => form.title.clone(),
-            CanvasMode::Confirm(confirm) => confirm.title.clone(),
-            CanvasMode::Success(message) | CanvasMode::Error(message) => message.title.clone(),
-        }
-    }
-
-    pub fn canvas_meta(&self) -> String {
-        match &self.canvas_mode {
-            CanvasMode::Browse => browse_meta(self).to_string(),
-            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => form.submit_label.clone(),
-            CanvasMode::Confirm(confirm) => confirm.submit_label.clone(),
-            CanvasMode::Success(_) => "[Enter] continue".to_string(),
-            CanvasMode::Error(_) => "[Esc] back".to_string(),
-        }
-    }
-
-    pub fn review_lines(&self) -> Vec<Line<'static>> {
-        match &self.canvas_mode {
-            CanvasMode::Browse => browse_review_lines(self),
-            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => form_review_lines(form),
-            CanvasMode::Confirm(confirm) => confirm_review_lines(confirm),
-            CanvasMode::Success(message) | CanvasMode::Error(message) => {
-                message_review_lines(message)
-            }
-        }
-    }
-
     fn form_state_mut(&mut self) -> Option<&mut FormState> {
         match &mut self.canvas_mode {
             CanvasMode::EditForm(form) | CanvasMode::Setup(form) => Some(form),
@@ -373,6 +374,114 @@ impl App {
     fn active_form_field_mut(&mut self) -> Option<&mut FormField> {
         self.form_state_mut()
             .and_then(|form| form.fields.get_mut(form.selected_field))
+    }
+
+    fn move_forward(&mut self) {
+        match self.focus {
+            Focus::Resources => self.next_resource(),
+            Focus::Actions => self.next_action(),
+            Focus::Form => self.form_next_field(),
+            Focus::Records => self.next_record(),
+        }
+    }
+
+    fn move_backward(&mut self) {
+        match self.focus {
+            Focus::Resources => self.previous_resource(),
+            Focus::Actions => self.previous_action(),
+            Focus::Form => self.form_previous_field(),
+            Focus::Records => self.previous_record(),
+        }
+    }
+
+    fn move_left(&mut self) {
+        if self.is_form_editing() {
+            self.form_toggle_or_cycle(false);
+            return;
+        }
+
+        if self.focus != Focus::Form {
+            self.previous_resource();
+        }
+    }
+
+    fn move_right(&mut self) {
+        if self.is_form_editing() {
+            self.form_toggle_or_cycle(true);
+            return;
+        }
+
+        if self.focus != Focus::Form {
+            self.next_resource();
+        }
+    }
+
+    fn handle_enter(&mut self) -> AppCommand {
+        match &self.canvas_mode {
+            CanvasMode::Browse => AppCommand::BeginAction {
+                resource: self.active_resource(),
+                action_index: self.selected_action,
+                selected_record: self.selected_record().cloned(),
+            },
+            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => {
+                AppCommand::SubmitForm(form.clone())
+            }
+            CanvasMode::Confirm(confirm) => AppCommand::Confirm(confirm.pending.clone()),
+            CanvasMode::Success(_) | CanvasMode::Error(_) => {
+                self.reset_to_browse();
+                AppCommand::Noop
+            }
+        }
+    }
+
+    fn handle_escape(&mut self) {
+        if !matches!(self.canvas_mode, CanvasMode::Browse) {
+            self.reset_to_browse();
+        }
+    }
+
+    fn is_form_editing(&self) -> bool {
+        self.focus == Focus::Form
+            && matches!(
+                self.canvas_mode,
+                CanvasMode::EditForm(_) | CanvasMode::Setup(_)
+            )
+    }
+
+    fn cycle_focus(&mut self, forward: bool) {
+        let ring = self.focus_order();
+        let current_index = ring
+            .iter()
+            .position(|focus| *focus == self.focus)
+            .unwrap_or(0);
+        let next_index = if forward {
+            (current_index + 1) % ring.len()
+        } else if current_index == 0 {
+            ring.len() - 1
+        } else {
+            current_index - 1
+        };
+        self.focus = ring[next_index];
+    }
+
+    fn set_focus(&mut self, focus: Focus) {
+        if self.focus_order().contains(&focus) {
+            self.focus = focus;
+        }
+    }
+
+    fn focus_order(&self) -> Vec<Focus> {
+        let mut order = if matches!(self.canvas_mode, CanvasMode::Browse) {
+            vec![Focus::Resources, Focus::Actions]
+        } else {
+            vec![Focus::Form, Focus::Resources, Focus::Actions]
+        };
+
+        if !self.active_records().is_empty() {
+            order.push(Focus::Records);
+        }
+
+        order
     }
 }
 

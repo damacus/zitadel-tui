@@ -10,7 +10,7 @@ use ratatui::backend::CrosstermBackend;
 
 use crate::{
     conductor::TuiConductor,
-    tui::{draw, App, CanvasMode, Focus},
+    tui::{draw, App, AppCommand},
 };
 
 pub async fn run_tui(mut conductor: TuiConductor) -> Result<()> {
@@ -33,83 +33,63 @@ async fn run_app(
     loop {
         terminal.draw(|frame| draw(frame, &app))?;
 
-        if event::poll(std::time::Duration::from_millis(100))? {
-            let Event::Key(key) = event::read()? else {
-                continue;
-            };
+        let Some(key_code) = read_key_press(std::time::Duration::from_millis(100))? else {
+            continue;
+        };
 
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-
-            match key.code {
-                KeyCode::Char('q') => break,
-                KeyCode::Char('j') | KeyCode::Down => match app.focus {
-                    Focus::Resources => app.next_resource(),
-                    Focus::Actions => app.next_action(),
-                    Focus::Form => app.form_next_field(),
-                    Focus::Records => app.next_record(),
-                },
-                KeyCode::Char('k') | KeyCode::Up => match app.focus {
-                    Focus::Resources => app.previous_resource(),
-                    Focus::Actions => app.previous_action(),
-                    Focus::Form => app.form_previous_field(),
-                    Focus::Records => app.previous_record(),
-                },
-                KeyCode::Char('h') | KeyCode::Left => {
-                    if app.focus == Focus::Form {
-                        app.form_toggle_or_cycle(false);
-                    } else {
-                        app.previous_resource();
-                    }
-                }
-                KeyCode::Char('l') | KeyCode::Right => {
-                    if app.focus == Focus::Form {
-                        app.form_toggle_or_cycle(true);
-                    } else {
-                        app.next_resource();
-                    }
-                }
-                KeyCode::Char('i') => app.toggle_inspector(),
-                KeyCode::Char('n') => app.focus = Focus::Actions,
-                KeyCode::Char('g') => app.focus = Focus::Resources,
-                KeyCode::Enter => match &app.canvas_mode {
-                    CanvasMode::Browse => {
-                        let mode = conductor.begin_action(
-                            app.active_resource(),
-                            app.selected_action,
-                            app.selected_record(),
-                        );
-                        app.set_canvas_mode(mode);
-                    }
-                    CanvasMode::EditForm(form) | CanvasMode::Setup(form) => {
-                        let next = conductor.submit_form(form).await;
-                        app.set_canvas_mode(next);
-                        app.sync_runtime(conductor.bootstrap_state());
-                    }
-                    CanvasMode::Confirm(confirm) => {
-                        let next = conductor.confirm(confirm.pending.clone()).await;
-                        app.set_canvas_mode(next);
-                        app.sync_runtime(conductor.bootstrap_state());
-                    }
-                    CanvasMode::Success(_) | CanvasMode::Error(_) => app.reset_to_browse(),
-                },
-                KeyCode::Esc => match app.canvas_mode {
-                    CanvasMode::Browse => {}
-                    CanvasMode::EditForm(_) | CanvasMode::Setup(_) | CanvasMode::Confirm(_) => {
-                        app.reset_to_browse()
-                    }
-                    CanvasMode::Success(_) | CanvasMode::Error(_) => app.reset_to_browse(),
-                },
-                KeyCode::Backspace if app.focus == Focus::Form => app.form_backspace(),
-                KeyCode::Char(' ') if app.focus == Focus::Form => app.form_toggle_or_cycle(true),
-                KeyCode::Char(ch) if app.focus == Focus::Form => app.form_insert_char(ch),
-                KeyCode::Tab => app.advance_focus(),
-                KeyCode::BackTab => app.reverse_focus(),
-                _ => {}
-            }
+        let command = app.handle_key(key_code);
+        if !handle_app_command(command, &mut app, conductor).await? {
+            break;
         }
     }
 
     Ok(())
+}
+
+fn read_key_press(timeout: std::time::Duration) -> Result<Option<KeyCode>> {
+    if !event::poll(timeout)? {
+        return Ok(None);
+    }
+
+    let Event::Key(key) = event::read()? else {
+        return Ok(None);
+    };
+
+    if key.kind != KeyEventKind::Press {
+        return Ok(None);
+    }
+
+    Ok(Some(key.code))
+}
+
+async fn handle_app_command(
+    command: AppCommand,
+    app: &mut App,
+    conductor: &mut TuiConductor,
+) -> Result<bool> {
+    match command {
+        AppCommand::Noop => Ok(true),
+        AppCommand::Quit => Ok(false),
+        AppCommand::BeginAction {
+            resource,
+            action_index,
+            selected_record,
+        } => {
+            let mode = conductor.begin_action(resource, action_index, selected_record.as_ref());
+            app.set_canvas_mode(mode);
+            Ok(true)
+        }
+        AppCommand::SubmitForm(form) => {
+            let next = conductor.submit_form(&form).await;
+            app.set_canvas_mode(next);
+            app.sync_runtime(conductor.bootstrap_state());
+            Ok(true)
+        }
+        AppCommand::Confirm(pending) => {
+            let next = conductor.confirm(pending).await;
+            app.set_canvas_mode(next);
+            app.sync_runtime(conductor.bootstrap_state());
+            Ok(true)
+        }
+    }
 }

@@ -1,9 +1,10 @@
 use super::{
     copy::{focus_label, pending_label, resource_label, selection_title, status_mark},
+    render::{canvas_lines, canvas_title},
     state::{cycle_choice, is_enabled, toggle_field},
     types::{
-        default_setup_form, App, CanvasMode, FieldKind, Focus, FormField, FormState, MessageState,
-        PendingAction, Record, ResourceKind, TuiBootstrap,
+        default_setup_form, App, AppCommand, CanvasMode, FieldKind, Focus, FormField, FormState,
+        MessageState, PendingAction, Record, ResourceKind, TuiBootstrap,
     },
     widgets::render_form_line,
 };
@@ -26,10 +27,6 @@ fn focus_cycles_forward() {
     let mut app = test_app();
     app.advance_focus();
     assert_eq!(app.focus, Focus::Actions);
-    app.advance_focus();
-    assert_eq!(app.focus, Focus::Form);
-    app.advance_focus();
-    assert_eq!(app.focus, Focus::Records);
     app.advance_focus();
     assert_eq!(app.focus, Focus::Resources);
 }
@@ -55,14 +52,70 @@ fn action_navigation_tracks_current_resource() {
 }
 
 #[test]
+fn enter_in_browse_mode_returns_begin_action_command() {
+    let mut app = test_app();
+    assert_eq!(
+        app.handle_key(crossterm::event::KeyCode::Enter),
+        AppCommand::BeginAction {
+            resource: ResourceKind::Applications,
+            action_index: 0,
+            selected_record: None,
+        }
+    );
+}
+
+#[test]
 fn focus_cycles_backward() {
     let mut app = test_app();
     app.reverse_focus();
-    assert_eq!(app.focus, Focus::Records);
-    app.reverse_focus();
-    assert_eq!(app.focus, Focus::Form);
-    app.reverse_focus();
     assert_eq!(app.focus, Focus::Actions);
+    app.reverse_focus();
+    assert_eq!(app.focus, Focus::Resources);
+}
+
+#[test]
+fn focus_cycles_form_first_when_modal_is_open() {
+    let mut app = App::from_bootstrap(TuiBootstrap {
+        host: "https://zitadel.example.com".to_string(),
+        project: "core".to_string(),
+        auth_label: "PAT".to_string(),
+        templates_path: None,
+        setup_required: false,
+        app_records: vec![Record {
+            id: "app-1".to_string(),
+            name: "grafana".to_string(),
+            kind: "public".to_string(),
+            summary: String::new(),
+            detail: String::new(),
+            changed_at: String::new(),
+        }],
+        user_records: vec![],
+        idp_records: vec![],
+    });
+    app.set_canvas_mode(CanvasMode::EditForm(FormState {
+        title: "Edit".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".to_string(),
+            value: String::new(),
+            kind: FieldKind::Text,
+            help: String::new(),
+        }],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    }));
+
+    assert_eq!(app.focus, Focus::Form);
+    app.advance_focus();
+    assert_eq!(app.focus, Focus::Resources);
+    app.advance_focus();
+    assert_eq!(app.focus, Focus::Actions);
+    app.advance_focus();
+    assert_eq!(app.focus, Focus::Records);
+    app.advance_focus();
+    assert_eq!(app.focus, Focus::Form);
 }
 
 #[test]
@@ -698,7 +751,7 @@ fn set_canvas_mode_browse_sets_focus_to_resources() {
 #[test]
 fn canvas_title_browse_mode() {
     let app = test_app();
-    let title = app.canvas_title();
+    let title = canvas_title(&app);
     assert!(!title.is_empty());
 }
 
@@ -709,7 +762,7 @@ fn canvas_title_error_mode() {
         title: "Something failed".to_string(),
         lines: vec!["detail".to_string()],
     }));
-    assert_eq!(app.canvas_title(), "Something failed");
+    assert_eq!(canvas_title(&app), "Something failed");
 }
 
 #[test]
@@ -719,7 +772,7 @@ fn message_lines_success_mode() {
         title: "Done".to_string(),
         lines: vec!["line1".to_string(), "line2".to_string()],
     }));
-    let lines = app.message_lines();
+    let lines = canvas_lines(&app);
     assert_eq!(lines, vec!["line1".to_string(), "line2".to_string()]);
 }
 
@@ -741,7 +794,7 @@ fn message_lines_form_mode_renders_fields() {
         pending: PendingAction::SaveConfig,
     };
     app.set_canvas_mode(CanvasMode::EditForm(form));
-    let lines = app.message_lines();
+    let lines = canvas_lines(&app);
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains("Host"));
 }
