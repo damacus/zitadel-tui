@@ -89,14 +89,32 @@ pub async fn execute_auth_command(
             .await?;
             let client = ZitadelClient::new(host.clone(), auth.token)?;
             let me = client.whoami().await?;
+            let (user_id, login_name) = auth_status_identity(&me);
             Ok(serde_json::json!({
                 "host": host,
                 "auth_source": auth.source,
-                "user_id": me["user"]["userId"],
-                "login_name": me["user"]["preferredLoginName"],
+                "user_id": user_id,
+                "login_name": login_name,
             }))
         }
     }
+}
+
+fn auth_status_identity(me: &Value) -> (Value, Value) {
+    let user = me.get("user").unwrap_or(&Value::Null);
+    let user_id = user
+        .get("userId")
+        .or_else(|| user.get("id"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let login_name = user
+        .get("preferredLoginName")
+        .or_else(|| user.get("userName"))
+        .or_else(|| user.get("loginName"))
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    (user_id, login_name)
 }
 
 fn prompt_for_client_id() -> Result<String> {
@@ -311,6 +329,65 @@ mod tests {
         let _ = fs::remove_file(cache_path);
         if let Some(host) = original_host {
             env::set_var("ZITADEL_URL", host);
+        }
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn auth_status_extracts_machine_user_id_from_id_field() {
+        let _guard = crate::test_support::env_lock();
+        let original_host = env::var("ZITADEL_URL").ok();
+        let original_token = env::var("ZITADEL_TOKEN").ok();
+        let original_service_account = env::var("ZITADEL_SERVICE_ACCOUNT_FILE").ok();
+        env::remove_var("ZITADEL_TOKEN");
+        env::remove_var("ZITADEL_SERVICE_ACCOUNT_FILE");
+
+        let mut server = Server::new_async().await;
+        let _whoami = server
+            .mock("GET", "/auth/v1/users/me")
+            .match_header("authorization", "Bearer service-account-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"user":{"id":"355223427969778852","preferredLoginName":"zitadel-admin-sa","machine":{"name":"Admin"}}}"#,
+            )
+            .create_async()
+            .await;
+
+        env::set_var("ZITADEL_URL", server.url());
+
+        let args = Cli::parse_from([
+            "zitadel-tui",
+            "--once",
+            "--token",
+            "service-account-token",
+            "auth",
+            "status",
+        ]);
+        let command = match &args.command {
+            Some(crate::cli::Command::Auth(command)) => command.clone(),
+            other => panic!("unexpected command: {other:?}"),
+        };
+
+        let result = execute_auth_command(&command, &args, &AppConfig::default())
+            .await
+            .unwrap();
+
+        assert_eq!(result["host"], server.url());
+        assert_eq!(result["auth_source"], "cli PAT");
+        assert_eq!(result["user_id"], "355223427969778852");
+        assert_eq!(result["login_name"], "zitadel-admin-sa");
+
+        if let Some(host) = original_host {
+            env::set_var("ZITADEL_URL", host);
+        } else {
+            env::remove_var("ZITADEL_URL");
+        }
+        if let Some(token) = original_token {
+            env::set_var("ZITADEL_TOKEN", token);
+        }
+        if let Some(path) = original_service_account {
+            env::set_var("ZITADEL_SERVICE_ACCOUNT_FILE", path);
         }
     }
 }
