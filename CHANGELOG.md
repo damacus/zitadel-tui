@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/damacus/zitadel-tui/compare/v0.1.4...v0.1.5) (2026-04-27)
+
+
+### Bug Fixes
+
+* **auth:** validate device login with userinfo ([a30740f](https://github.com/damacus/zitadel-tui/commit/a30740fee2a592c57fc3da2ee7f23967599c6fd4))
+
 ## [0.1.4](https://github.com/damacus/zitadel-tui/compare/v0.1.3...v0.1.4) (2026-04-27)
 
 
