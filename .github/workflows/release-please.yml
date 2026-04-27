@@ -3,6 +3,12 @@ name: release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Existing release tag to publish, for example v0.1.4
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -13,6 +19,7 @@ permissions:
 
 jobs:
   release-please:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
@@ -25,16 +32,42 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  release-context:
+    runs-on: ubuntu-latest
+    needs: release-please
+    if: ${{ always() }}
+    outputs:
+      should_publish: ${{ steps.context.outputs.should_publish }}
+      tag_name: ${{ steps.context.outputs.tag_name }}
+    steps:
+      - name: Resolve release tag
+        id: context
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          RELEASES_CREATED: ${{ needs.release-please.outputs.releases_created }}
+          RELEASE_TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "should_publish=true" >> "${GITHUB_OUTPUT}"
+            echo "tag_name=${INPUT_TAG_NAME}" >> "${GITHUB_OUTPUT}"
+          elif [[ "${RELEASES_CREATED}" == "true" ]]; then
+            echo "should_publish=true" >> "${GITHUB_OUTPUT}"
+            echo "tag_name=${RELEASE_TAG_NAME}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "should_publish=false" >> "${GITHUB_OUTPUT}"
+          fi
+
   build-binaries:
     name: Build release binary
-    needs: release-please
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    needs: release-context
+    if: ${{ needs.release-context.outputs.should_publish == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ needs.release-context.outputs.tag_name }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -57,8 +90,8 @@ jobs:
 
   github-release:
     name: Create GitHub Release
-    needs: [release-please, build-binaries]
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    needs: [release-context, build-binaries]
+    if: ${{ needs.release-context.outputs.should_publish == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download release artifact
@@ -73,14 +106,14 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ needs.release-please.outputs.tag_name }}
+          tag_name: ${{ needs.release-context.outputs.tag_name }}
           files: |
             artifacts/**/*.tar.gz
             artifacts/checksums-sha256.txt
 
   docker:
-    needs: release-please
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    needs: release-context
+    if: ${{ needs.release-context.outputs.should_publish == 'true' }}
     runs-on: ubuntu-latest
     env:
       REGISTRY: ghcr.io
@@ -89,7 +122,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ needs.release-context.outputs.tag_name }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -110,8 +143,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag_name }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag_name }}
+            type=semver,pattern={{version}},value=${{ needs.release-context.outputs.tag_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-context.outputs.tag_name }}
             type=sha,format=long
             type=raw,value=latest
 
@@ -128,14 +161,14 @@ jobs:
 
   publish-crate:
     name: Publish to crates.io
-    needs: release-please
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    needs: release-context
+    if: ${{ needs.release-context.outputs.should_publish == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ needs.release-context.outputs.tag_name }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

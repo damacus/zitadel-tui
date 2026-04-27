@@ -422,6 +422,9 @@ The release workflow is tag-driven through `release-please` and publishes:
 - the Rust crate to `crates.io`
 
 The publish job expects `CARGO_REGISTRY_TOKEN` in GitHub Actions secrets.
+If a GitHub outage or transient runner failure interrupts publishing after a
+tag is created, run the `release` workflow manually with the existing tag name
+to retry the release jobs.
 
 ## License
 
