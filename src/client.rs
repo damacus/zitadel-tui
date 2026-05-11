@@ -546,7 +546,10 @@ mod tests {
     async fn regenerate_secret_uses_expected_endpoint() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("POST", "/management/v1/projects/project-1/apps/app-1/oidc/secret/_regenerate")
+            .mock(
+                "POST",
+                "/management/v1/projects/project-1/apps/app-1/oidc/secret/_regenerate",
+            )
             .match_header("authorization", "Bearer test-token")
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -555,7 +558,10 @@ mod tests {
             .await;
 
         let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
-        let response = client.regenerate_secret("project-1", "app-1").await.unwrap();
+        let response = client
+            .regenerate_secret("project-1", "app-1")
+            .await
+            .unwrap();
 
         mock.assert_async().await;
         assert_eq!(response["clientSecret"], "new-secret");
