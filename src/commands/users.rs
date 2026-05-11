@@ -45,18 +45,30 @@ pub async fn execute_users_command(
         UsersAction::GrantIamOwner(grant) => client.grant_iam_owner(&grant.user_id).await,
         UsersAction::QuickSetup => {
             let templates = config.templates()?;
-            let mut created = Vec::new();
-            for user in templates.users {
-                let result = client
-                    .create_human_user(&user.email, &user.first_name, &user.last_name, None)
-                    .await?;
-                if user.admin {
-                    if let Some(user_id) = result.get("userId").and_then(|value| value.as_str()) {
-                        client.grant_iam_owner(user_id).await?;
+            let mut join_set = tokio::task::JoinSet::new();
+
+            for (index, user) in templates.users.into_iter().enumerate() {
+                let client = client.clone();
+                join_set.spawn(async move {
+                    let result = client
+                        .create_human_user(&user.email, &user.first_name, &user.last_name, None)
+                        .await?;
+                    if user.admin {
+                        if let Some(user_id) = result.get("userId").and_then(|value| value.as_str()) {
+                            client.grant_iam_owner(user_id).await?;
+                        }
                     }
-                }
-                created.push(result);
+                    Ok::<_, anyhow::Error>((index, result))
+                });
             }
+
+            let mut results = Vec::new();
+            while let Some(res) = join_set.join_next().await {
+                results.push(res??);
+            }
+            results.sort_by_key(|(idx, _)| *idx);
+
+            let created: Vec<Value> = results.into_iter().map(|(_, val)| val).collect();
             Ok(Value::Array(created))
         }
     }

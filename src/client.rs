@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use reqwest::{Client, Method};
 use serde_json::{json, Value};
 
+#[derive(Clone)]
 pub struct ZitadelClient {
     http: Client,
     base_url: String,
