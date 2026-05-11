@@ -322,6 +322,25 @@ mod tests {
     use mockito::{Matcher, Server};
 
     #[tokio::test]
+    async fn whoami_sends_bearer_token_and_parses_result() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/auth/v1/users/me")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"id":"user-1","username":"test-user"}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let user_info = client.whoami().await.unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(user_info["id"], "user-1");
+        assert_eq!(user_info["username"], "test-user");
+    }
+    #[tokio::test]
     async fn list_projects_sends_bearer_token_and_parses_results() {
         let mut server = Server::new_async().await;
         let mock = server
