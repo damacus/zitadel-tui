@@ -54,7 +54,8 @@ pub async fn execute_users_command(
                         .create_human_user(&user.email, &user.first_name, &user.last_name, None)
                         .await?;
                     if user.admin {
-                        if let Some(user_id) = result.get("userId").and_then(|value| value.as_str()) {
+                        if let Some(user_id) = result.get("userId").and_then(|value| value.as_str())
+                        {
                             client.grant_iam_owner(user_id).await?;
                         }
                     }
