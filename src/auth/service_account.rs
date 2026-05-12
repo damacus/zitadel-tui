@@ -1,5 +1,4 @@
 use std::{
-    fs,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -32,8 +31,21 @@ pub(crate) async fn exchange_service_account(
     zitadel_url: &str,
     path: PathBuf,
 ) -> Result<String> {
-    let contents =
-        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    // SECURITY FIX: Prevent symlink attacks by checking if the file is a symlink
+    if tokio::fs::symlink_metadata(&path)
+        .await?
+        .file_type()
+        .is_symlink()
+    {
+        anyhow::bail!(
+            "Service account key file path is a symlink: {}",
+            path.display()
+        );
+    }
+
+    let contents = tokio::fs::read_to_string(&path)
+        .await
+        .with_context(|| format!("failed to read {}", path.display()))?;
     let key: ServiceAccountKey = serde_json::from_str(&contents)
         .with_context(|| format!("failed to parse {}", path.display()))?;
     let jwt = create_jwt(&key, zitadel_url)?;
@@ -264,5 +276,38 @@ ehuWWRLZbrtEDcwsUeaYjDGj
         mock.assert_async().await;
         assert!(error.contains("service-account token exchange failed"));
         assert!(!error.contains("leaked"));
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn rejects_symlink_service_account_file() {
+        let _guard = crate::test_support::env_lock();
+        let target_path = temp_file(
+            "service-account-target",
+            &serde_json::json!({
+                "keyId": "kid-1",
+                "userId": "user-1",
+                "key": TEST_PRIVATE_KEY
+            })
+            .to_string(),
+        );
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let symlink_path = env::temp_dir().join(format!("zitadel-tui-symlink-{unique}.json"));
+        std::os::unix::fs::symlink(&target_path, &symlink_path).unwrap();
+
+        let http = Client::new();
+        let error =
+            exchange_service_account(&http, "https://zitadel.example.com", symlink_path.clone())
+                .await
+                .unwrap_err()
+                .to_string();
+
+        std::fs::remove_file(&symlink_path).unwrap();
+
+        assert!(error.contains("Service account key file path is a symlink"));
     }
 }
