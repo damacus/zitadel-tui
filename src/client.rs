@@ -148,8 +148,8 @@ impl ZitadelClient {
 
     pub async fn regenerate_secret(&self, project_id: &str, app_id: &str) -> Result<Value> {
         self.api_request(
-            Method::PUT,
-            &format!("/management/v1/projects/{project_id}/apps/{app_id}/oidc_config/secret"),
+            Method::POST,
+            &format!("/management/v1/projects/{project_id}/apps/{app_id}/oidc/secret/_regenerate"),
             None,
         )
         .await
@@ -542,5 +542,29 @@ mod tests {
 
         mock.assert_async().await;
         assert_eq!(response["memberId"], "member-1");
+    }
+    #[tokio::test]
+    async fn regenerate_secret_uses_expected_endpoint() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock(
+                "POST",
+                "/management/v1/projects/project-1/apps/app-1/oidc/secret/_regenerate",
+            )
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"clientSecret":"new-secret"}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let response = client
+            .regenerate_secret("project-1", "app-1")
+            .await
+            .unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(response["clientSecret"], "new-secret");
     }
 }
