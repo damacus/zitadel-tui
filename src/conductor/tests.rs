@@ -109,6 +109,11 @@ fn app_template(name: &str) -> AppTemplate {
 
 #[tokio::test]
 async fn refresh_runtime_loads_all_record_types() {
+    let _guard = crate::test_support::env_lock();
+    let original_token = env::var("ZITADEL_TOKEN").ok();
+    let original_sa = env::var("ZITADEL_SERVICE_ACCOUNT_FILE").ok();
+    env::remove_var("ZITADEL_TOKEN");
+    env::remove_var("ZITADEL_SERVICE_ACCOUNT_FILE");
     let mut server = mockito::Server::new_async().await;
     let _auth = server
         .mock("POST", "/oauth/v2/token")
@@ -160,6 +165,12 @@ async fn refresh_runtime_loads_all_record_types() {
     assert_eq!(conductor.idp_records.len(), 1);
     assert_eq!(conductor.project, "project-1");
     assert_eq!(conductor.auth_label, "config PAT");
+    if let Some(token) = original_token {
+        env::set_var("ZITADEL_TOKEN", token);
+    }
+    if let Some(sa) = original_sa {
+        env::set_var("ZITADEL_SERVICE_ACCOUNT_FILE", sa);
+    }
 }
 
 #[allow(clippy::await_holding_lock)]
