@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.7](https://github.com/damacus/zitadel-tui/compare/v0.1.6...v0.1.7) (2026-05-12)
+
+
+### Features
+
+* improve TUI form UX with cursor and keystroke fix ([8f74020](https://github.com/damacus/zitadel-tui/commit/8f7402055f4f0d829c8cbbfd84f9c5398f9ef02e))
+
+
+### Bug Fixes
+
+* add clippy allow for await_holding_lock in test ([#107](https://github.com/damacus/zitadel-tui/issues/107)) ([9844f13](https://github.com/damacus/zitadel-tui/commit/9844f138dfb8d77a2da9ebcfa6567705cb872fe0))
+* **auth:** reject OIDC sessions for API commands ([24ec9a8](https://github.com/damacus/zitadel-tui/commit/24ec9a893afcf10af8143b504f398c77c887a832))
+* clear ZITADEL_TOKEN env var in tests that rely on config/cache credentials ([b21a0a3](https://github.com/damacus/zitadel-tui/commit/b21a0a3c46e2f4310a50b7f659f8bc14460d7410))
+
 ## [0.1.6](https://github.com/damacus/zitadel-tui/compare/v0.1.5...v0.1.6) (2026-04-27)
 
 
