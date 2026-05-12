@@ -197,7 +197,7 @@ mod tests {
     fn temp_cache_path() -> std::path::PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("System time is before UNIX epoch")
             .as_nanos();
         env::temp_dir().join(format!("zitadel-tui-main-test-tokens-{unique}.json"))
     }
