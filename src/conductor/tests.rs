@@ -107,6 +107,7 @@ fn app_template(name: &str) -> AppTemplate {
     }
 }
 
+#[allow(clippy::await_holding_lock)]
 #[tokio::test]
 async fn refresh_runtime_loads_all_record_types() {
     let _guard = crate::test_support::env_lock();
