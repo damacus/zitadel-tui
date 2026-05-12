@@ -102,6 +102,7 @@ fn focus_cycles_form_first_when_modal_is_open() {
             value: String::new(),
             kind: FieldKind::Text,
             help: String::new(),
+            cursor: 0,
         }],
         selected_field: 0,
         pending: PendingAction::SaveConfig,
@@ -306,6 +307,7 @@ fn render_form_line_text_field_selected() {
         value: "https://z.example.com".to_string(),
         kind: FieldKind::Text,
         help: String::new(),
+        cursor: 0,
     };
     let line = render_form_line(&field, true);
     assert!(line.starts_with("›"));
@@ -321,6 +323,7 @@ fn render_form_line_text_field_unselected() {
         value: "value".to_string(),
         kind: FieldKind::Text,
         help: String::new(),
+        cursor: 0,
     };
     let line = render_form_line(&field, false);
     assert!(line.starts_with(" "));
@@ -334,6 +337,7 @@ fn render_form_line_secret_masks_value() {
         value: "abc".to_string(),
         kind: FieldKind::Secret,
         help: String::new(),
+        cursor: 0,
     };
     let line = render_form_line(&field, false);
     assert!(line.contains("•••"));
@@ -348,6 +352,7 @@ fn render_form_line_secret_empty_shows_single_dot() {
         value: String::new(),
         kind: FieldKind::Secret,
         help: String::new(),
+        cursor: 0,
     };
     let line = render_form_line(&field, false);
     assert!(line.contains("•"));
@@ -361,6 +366,7 @@ fn render_form_line_toggle_enabled() {
         value: "true".to_string(),
         kind: FieldKind::Toggle,
         help: String::new(),
+        cursor: 0,
     };
     let line = render_form_line(&field, false);
     assert!(line.contains("[x]"));
@@ -374,6 +380,7 @@ fn render_form_line_toggle_disabled() {
         value: "false".to_string(),
         kind: FieldKind::Toggle,
         help: String::new(),
+        cursor: 0,
     };
     let line = render_form_line(&field, false);
     assert!(line.contains("[ ]"));
@@ -387,6 +394,7 @@ fn render_form_line_checkbox_enabled() {
         value: "true".to_string(),
         kind: FieldKind::Checkbox,
         help: String::new(),
+        cursor: 0,
     };
     let line = render_form_line(&field, false);
     assert!(line.contains("[x]"));
@@ -400,6 +408,7 @@ fn render_form_line_choice_shows_value() {
         value: "PAT".to_string(),
         kind: FieldKind::Choice(vec!["PAT".to_string(), "SA".to_string()]),
         help: String::new(),
+        cursor: 0,
     };
     let line = render_form_line(&field, false);
     assert!(line.contains("PAT"));
@@ -476,6 +485,7 @@ fn toggle_field_flips_value() {
         value: "false".to_string(),
         kind: FieldKind::Toggle,
         help: String::new(),
+        cursor: 0,
     };
     toggle_field(&mut field);
     assert_eq!(field.value, "true");
@@ -492,6 +502,7 @@ fn cycle_choice_forward() {
         value: "a".to_string(),
         kind: FieldKind::Choice(options.clone()),
         help: String::new(),
+        cursor: 0,
     };
     cycle_choice(&mut field, &options, true);
     assert_eq!(field.value, "b");
@@ -510,6 +521,7 @@ fn cycle_choice_backward() {
         value: "a".to_string(),
         kind: FieldKind::Choice(options.clone()),
         help: String::new(),
+        cursor: 0,
     };
     cycle_choice(&mut field, &options, false);
     assert_eq!(field.value, "c");
@@ -526,6 +538,7 @@ fn cycle_choice_unknown_value_resets_to_first() {
         value: "unknown".to_string(),
         kind: FieldKind::Choice(options.clone()),
         help: String::new(),
+        cursor: 0,
     };
     cycle_choice(&mut field, &options, true);
     assert_eq!(field.value, "a");
@@ -544,6 +557,7 @@ fn form_backspace_removes_last_char() {
             value: "hello".to_string(),
             kind: FieldKind::Text,
             help: String::new(),
+            cursor: 5,
         }],
         selected_field: 0,
         pending: PendingAction::SaveConfig,
@@ -569,6 +583,7 @@ fn form_backspace_noop_on_toggle() {
             value: "true".to_string(),
             kind: FieldKind::Toggle,
             help: String::new(),
+            cursor: 0,
         }],
         selected_field: 0,
         pending: PendingAction::SaveConfig,
@@ -595,6 +610,7 @@ fn form_next_field_wraps() {
                 value: String::new(),
                 kind: FieldKind::Text,
                 help: String::new(),
+                cursor: 0,
             },
             FormField {
                 key: "b",
@@ -602,6 +618,7 @@ fn form_next_field_wraps() {
                 value: String::new(),
                 kind: FieldKind::Text,
                 help: String::new(),
+                cursor: 0,
             },
         ],
         selected_field: 0,
@@ -634,6 +651,7 @@ fn form_previous_field_wraps() {
                 value: String::new(),
                 kind: FieldKind::Text,
                 help: String::new(),
+                cursor: 0,
             },
             FormField {
                 key: "b",
@@ -641,6 +659,7 @@ fn form_previous_field_wraps() {
                 value: String::new(),
                 kind: FieldKind::Text,
                 help: String::new(),
+                cursor: 0,
             },
         ],
         selected_field: 0,
@@ -732,6 +751,7 @@ fn set_canvas_mode_sets_focus_to_form_for_edit() {
             value: String::new(),
             kind: FieldKind::Text,
             help: String::new(),
+            cursor: 0,
         }],
         selected_field: 0,
         pending: PendingAction::SaveConfig,
@@ -789,6 +809,7 @@ fn message_lines_form_mode_renders_fields() {
             value: "https://z.example.com".to_string(),
             kind: FieldKind::Text,
             help: String::new(),
+            cursor: 0,
         }],
         selected_field: 0,
         pending: PendingAction::SaveConfig,
@@ -849,6 +870,7 @@ fn form_insert_char_space_toggles_toggle_field() {
             value: "false".to_string(),
             kind: FieldKind::Toggle,
             help: String::new(),
+            cursor: 0,
         }],
         selected_field: 0,
         pending: PendingAction::SaveConfig,
@@ -874,6 +896,7 @@ fn form_insert_char_space_cycles_choice() {
             value: "PAT".to_string(),
             kind: FieldKind::Choice(vec!["PAT".to_string(), "SA".to_string()]),
             help: String::new(),
+            cursor: 0,
         }],
         selected_field: 0,
         pending: PendingAction::SaveConfig,
@@ -902,4 +925,361 @@ fn previous_action_wraps_to_last() {
     app.previous_action();
     let last = app.actions().len() - 1;
     assert_eq!(app.selected_action, last);
+}
+
+#[test]
+fn typing_n_in_form_field_inserts_text_not_navigates() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Create application".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".to_string(),
+            value: String::new(),
+            kind: FieldKind::Text,
+            help: String::new(),
+            cursor: 0,
+        }],
+        selected_field: 0,
+        pending: PendingAction::CreateApplication,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    assert_eq!(app.focus, Focus::Form);
+
+    app.handle_key(crossterm::event::KeyCode::Char('n'));
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].value, "n");
+    assert_eq!(app.focus, Focus::Form);
+}
+
+#[test]
+fn typing_j_in_form_field_inserts_text_not_moves_field() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![
+            FormField {
+                key: "a",
+                label: "A".to_string(),
+                value: String::new(),
+                kind: FieldKind::Text,
+                help: String::new(),
+                cursor: 0,
+            },
+            FormField {
+                key: "b",
+                label: "B".to_string(),
+                value: String::new(),
+                kind: FieldKind::Text,
+                help: String::new(),
+                cursor: 0,
+            },
+        ],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.handle_key(crossterm::event::KeyCode::Char('j'));
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].value, "j");
+    assert_eq!(form.selected_field, 0);
+}
+
+#[test]
+fn typing_g_in_form_field_inserts_text_not_focuses_resources() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "host",
+            label: "Host".to_string(),
+            value: String::new(),
+            kind: FieldKind::Text,
+            help: String::new(),
+            cursor: 0,
+        }],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.handle_key(crossterm::event::KeyCode::Char('g'));
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].value, "g");
+    assert_eq!(app.focus, Focus::Form);
+}
+
+#[test]
+fn typing_q_in_form_field_inserts_text_not_quits() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".to_string(),
+            value: String::new(),
+            kind: FieldKind::Text,
+            help: String::new(),
+            cursor: 0,
+        }],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    let cmd = app.handle_key(crossterm::event::KeyCode::Char('q'));
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].value, "q");
+    assert!(matches!(cmd, AppCommand::Noop));
+}
+
+#[test]
+fn form_insert_char_at_cursor_position() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".to_string(),
+            value: "hel".to_string(),
+            kind: FieldKind::Text,
+            help: String::new(),
+            cursor: 3,
+        }],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.form_insert_char('l');
+    app.form_insert_char('o');
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].value, "hello");
+}
+
+#[test]
+fn form_backspace_at_cursor_removes_char_before() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".to_string(),
+            value: "hello".to_string(),
+            kind: FieldKind::Text,
+            help: String::new(),
+            cursor: 5,
+        }],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.form_backspace();
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].value, "hell");
+}
+
+#[test]
+fn form_cursor_moves_left_and_right_within_value() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".to_string(),
+            value: "hello".to_string(),
+            kind: FieldKind::Text,
+            help: String::new(),
+            cursor: 5,
+        }],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.form_cursor_left();
+    app.form_insert_char('x');
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].value, "hellxo");
+
+    app.form_cursor_left();
+    app.form_cursor_left();
+    app.form_insert_char('y');
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].value, "helylxo");
+}
+
+#[test]
+fn form_cursor_clamped_at_value_boundaries() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".to_string(),
+            value: "a".to_string(),
+            kind: FieldKind::Text,
+            help: String::new(),
+            cursor: 1,
+        }],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.form_cursor_left();
+    app.form_cursor_left();
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].cursor, 0);
+
+    app.form_cursor_right();
+    app.form_cursor_right();
+    app.form_cursor_right();
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].cursor, 1);
+}
+
+#[test]
+fn form_cursor_initialized_to_end_of_value() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".to_string(),
+            value: "hello".to_string(),
+            kind: FieldKind::Text,
+            help: String::new(),
+            cursor: 5,
+        }],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.fields[0].cursor, 5);
+}
+
+#[test]
+fn render_form_line_shows_cursor_in_text_field() {
+    let field = FormField {
+        key: "name",
+        label: "Name".to_string(),
+        value: "penpot".to_string(),
+        kind: FieldKind::Text,
+        help: String::new(),
+        cursor: 6,
+    };
+    let line = render_form_line(&field, true);
+    assert!(line.contains("penpot"));
+    assert!(line.contains("▏"));
+}
+
+#[test]
+fn render_form_line_shows_cursor_in_secret_field() {
+    let field = FormField {
+        key: "token",
+        label: "PAT".to_string(),
+        value: "secret".to_string(),
+        kind: FieldKind::Secret,
+        help: String::new(),
+        cursor: 6,
+    };
+    let line = render_form_line(&field, true);
+    assert!(line.contains("••••••"));
+    assert!(line.contains("▏"));
+}
+
+#[test]
+fn escape_in_form_mode_returns_to_browse() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".to_string(),
+            value: String::new(),
+            kind: FieldKind::Text,
+            help: String::new(),
+            cursor: 0,
+        }],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.handle_key(crossterm::event::KeyCode::Esc);
+    assert!(matches!(app.canvas_mode, CanvasMode::Browse));
+}
+
+#[test]
+fn tab_in_form_mode_cycles_fields() {
+    let mut app = test_app();
+    let form = FormState {
+        title: "Test".to_string(),
+        description: String::new(),
+        submit_label: String::new(),
+        fields: vec![
+            FormField {
+                key: "a",
+                label: "A".to_string(),
+                value: String::new(),
+                kind: FieldKind::Text,
+                help: String::new(),
+                cursor: 0,
+            },
+            FormField {
+                key: "b",
+                label: "B".to_string(),
+                value: String::new(),
+                kind: FieldKind::Text,
+                help: String::new(),
+                cursor: 0,
+            },
+        ],
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+    };
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.handle_key(crossterm::event::KeyCode::Tab);
+    let CanvasMode::EditForm(form) = &app.canvas_mode else {
+        panic!("expected EditForm");
+    };
+    assert_eq!(form.selected_field, 1);
 }

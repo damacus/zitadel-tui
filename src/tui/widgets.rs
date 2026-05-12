@@ -11,7 +11,15 @@ use super::{
 pub(crate) fn render_form_line(field: &FormField, selected: bool) -> String {
     let marker = if selected { "›" } else { " " };
     let value = match field.kind {
-        FieldKind::Secret => "•".repeat(field.value.len().max(1)),
+        FieldKind::Secret => {
+            let masked = "•".repeat(field.value.len().max(1));
+            if selected {
+                let cursor = field.cursor.min(field.value.len());
+                insert_cursor(&masked, cursor)
+            } else {
+                masked
+            }
+        }
         FieldKind::Toggle | FieldKind::Checkbox => {
             if is_enabled(&field.value) {
                 "[x]".to_string()
@@ -19,9 +27,24 @@ pub(crate) fn render_form_line(field: &FormField, selected: bool) -> String {
                 "[ ]".to_string()
             }
         }
-        FieldKind::Choice(_) | FieldKind::Text => field.value.clone(),
+        FieldKind::Choice(_) | FieldKind::Text => {
+            if selected && !field.value.is_empty() {
+                let cursor = field.cursor.min(field.value.len());
+                insert_cursor(&field.value, cursor)
+            } else {
+                field.value.clone()
+            }
+        }
     };
     format!("{marker} {:<18} {}", field.label, value)
+}
+
+fn insert_cursor(value: &str, cursor: usize) -> String {
+    let char_count = value.chars().count();
+    let cursor = cursor.min(char_count);
+    let before: String = value.chars().take(cursor).collect();
+    let after: String = value.chars().skip(cursor).collect();
+    format!("{before}▏{after}")
 }
 
 pub(crate) fn field_line(label: &str, value: &str) -> Line<'static> {

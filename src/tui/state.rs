@@ -202,68 +202,97 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyCode) -> AppCommand {
-        match key {
-            KeyCode::Char('q') => AppCommand::Quit,
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.move_forward();
-                AppCommand::Noop
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.move_backward();
-                AppCommand::Noop
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.move_left();
-                AppCommand::Noop
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.move_right();
-                AppCommand::Noop
-            }
-            KeyCode::Char('i') => {
-                self.toggle_inspector();
-                AppCommand::Noop
-            }
-            KeyCode::Char('n') => {
-                self.set_focus(Focus::Actions);
-                AppCommand::Noop
-            }
-            KeyCode::Char('g') => {
-                self.set_focus(Focus::Resources);
-                AppCommand::Noop
-            }
-            KeyCode::Enter => self.handle_enter(),
-            KeyCode::Esc => {
-                self.handle_escape();
-                AppCommand::Noop
-            }
-            KeyCode::Backspace => {
-                if self.is_form_editing() {
+        if self.is_form_editing() {
+            match key {
+                KeyCode::Esc => {
+                    self.handle_escape();
+                    AppCommand::Noop
+                }
+                KeyCode::Enter => self.handle_enter(),
+                KeyCode::Backspace => {
                     self.form_backspace();
+                    AppCommand::Noop
                 }
-                AppCommand::Noop
-            }
-            KeyCode::Char(' ') => {
-                if self.is_form_editing() {
+                KeyCode::Char(' ') => {
                     self.form_toggle_or_cycle(true);
+                    AppCommand::Noop
                 }
-                AppCommand::Noop
-            }
-            KeyCode::Char(ch) => {
-                if self.is_form_editing() {
+                KeyCode::Char(ch) => {
                     self.form_insert_char(ch);
+                    AppCommand::Noop
                 }
-                AppCommand::Noop
+                KeyCode::Tab => {
+                    self.form_next_field();
+                    AppCommand::Noop
+                }
+                KeyCode::BackTab => {
+                    self.form_previous_field();
+                    AppCommand::Noop
+                }
+                KeyCode::Left => {
+                    self.form_cursor_left();
+                    AppCommand::Noop
+                }
+                KeyCode::Right => {
+                    self.form_cursor_right();
+                    AppCommand::Noop
+                }
+                KeyCode::Up => {
+                    self.form_previous_field();
+                    AppCommand::Noop
+                }
+                KeyCode::Down => {
+                    self.form_next_field();
+                    AppCommand::Noop
+                }
+                _ => AppCommand::Noop,
             }
-            KeyCode::Tab => {
-                self.advance_focus();
-                AppCommand::Noop
+        } else {
+            match key {
+                KeyCode::Char('q') => AppCommand::Quit,
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.move_forward();
+                    AppCommand::Noop
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.move_backward();
+                    AppCommand::Noop
+                }
+                KeyCode::Char('h') | KeyCode::Left => {
+                    self.move_left();
+                    AppCommand::Noop
+                }
+                KeyCode::Char('l') | KeyCode::Right => {
+                    self.move_right();
+                    AppCommand::Noop
+                }
+                KeyCode::Char('i') => {
+                    self.toggle_inspector();
+                    AppCommand::Noop
+                }
+                KeyCode::Char('n') => {
+                    self.set_focus(Focus::Actions);
+                    AppCommand::Noop
+                }
+                KeyCode::Char('g') => {
+                    self.set_focus(Focus::Resources);
+                    AppCommand::Noop
+                }
+                KeyCode::Enter => self.handle_enter(),
+                KeyCode::Esc => {
+                    self.handle_escape();
+                    AppCommand::Noop
+                }
+                KeyCode::Tab => {
+                    self.advance_focus();
+                    AppCommand::Noop
+                }
+                KeyCode::BackTab => {
+                    self.reverse_focus();
+                    AppCommand::Noop
+                }
+                _ => AppCommand::Noop,
             }
-            KeyCode::BackTab => {
-                self.reverse_focus();
-                AppCommand::Noop
-            }
-            _ => AppCommand::Noop,
         }
     }
 
@@ -319,7 +348,9 @@ impl App {
             let kind = field.kind.clone();
             match kind {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
-                    field.value.push(ch)
+                    let cursor = field.cursor.min(field.value.len());
+                    field.value.insert(cursor, ch);
+                    field.cursor = cursor + 1;
                 }
                 super::types::FieldKind::Toggle | super::types::FieldKind::Checkbox => {
                     if ch == ' ' {
@@ -339,11 +370,38 @@ impl App {
         if let Some(field) = self.active_form_field_mut() {
             match field.kind {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
-                    field.value.pop();
+                    let cursor = field.cursor.min(field.value.len());
+                    if cursor > 0 {
+                        field.value.remove(cursor - 1);
+                        field.cursor = cursor - 1;
+                    }
                 }
                 super::types::FieldKind::Toggle
                 | super::types::FieldKind::Checkbox
                 | super::types::FieldKind::Choice(_) => {}
+            }
+        }
+    }
+
+    pub fn form_cursor_left(&mut self) {
+        if let Some(field) = self.active_form_field_mut() {
+            match field.kind {
+                super::types::FieldKind::Text | super::types::FieldKind::Secret => {
+                    field.cursor = field.cursor.saturating_sub(1);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn form_cursor_right(&mut self) {
+        if let Some(field) = self.active_form_field_mut() {
+            match field.kind {
+                super::types::FieldKind::Text | super::types::FieldKind::Secret => {
+                    let len = field.value.len();
+                    field.cursor = (field.cursor + 1).min(len);
+                }
+                _ => {}
             }
         }
     }

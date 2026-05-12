@@ -116,6 +116,7 @@ pub struct FormField {
     pub value: String,
     pub kind: FieldKind,
     pub help: String,
+    pub cursor: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -228,6 +229,7 @@ pub fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
                 value: bootstrap.host.clone(),
                 kind: FieldKind::Text,
                 help: "Zitadel base URL".to_string(),
+                cursor: bootstrap.host.len(),
             },
             FormField {
                 key: "project",
@@ -235,6 +237,7 @@ pub fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
                 value: bootstrap.project.clone(),
                 kind: FieldKind::Text,
                 help: "Optional default project ID".to_string(),
+                cursor: bootstrap.project.len(),
             },
             FormField {
                 key: "auth_method",
@@ -246,6 +249,7 @@ pub fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
                     "OAuth device (placeholder)".to_string(),
                 ]),
                 help: "Choose PAT or service account for this slice".to_string(),
+                cursor: 3,
             },
             FormField {
                 key: "token",
@@ -253,6 +257,7 @@ pub fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
                 value: String::new(),
                 kind: FieldKind::Secret,
                 help: "Used when auth method is PAT".to_string(),
+                cursor: 0,
             },
             FormField {
                 key: "service_account_file",
@@ -260,6 +265,7 @@ pub fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
                 value: String::new(),
                 kind: FieldKind::Text,
                 help: "Used when auth method is service account".to_string(),
+                cursor: 0,
             },
             FormField {
                 key: "templates_path",
@@ -267,6 +273,7 @@ pub fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
                 value: bootstrap.templates_path.clone().unwrap_or_default(),
                 kind: FieldKind::Text,
                 help: "Optional apps/users YAML file".to_string(),
+                cursor: bootstrap.templates_path.clone().unwrap_or_default().len(),
             },
         ],
     }

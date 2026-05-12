@@ -291,6 +291,7 @@ pub(crate) fn text_field(key: &'static str, label: &str, value: &str, help: &str
         value: value.to_string(),
         kind: crate::tui::FieldKind::Text,
         help: help.to_string(),
+        cursor: value.len(),
     }
 }
 
@@ -301,6 +302,7 @@ pub(crate) fn secret_field(key: &'static str, label: &str, value: &str, help: &s
         value: value.to_string(),
         kind: crate::tui::FieldKind::Secret,
         help: help.to_string(),
+        cursor: value.len(),
     }
 }
 
@@ -311,6 +313,7 @@ pub(crate) fn toggle_field(key: &'static str, label: &str, value: bool, help: &s
         value: if value { "true" } else { "false" }.to_string(),
         kind: crate::tui::FieldKind::Toggle,
         help: help.to_string(),
+        cursor: 0,
     }
 }
 
@@ -327,6 +330,7 @@ pub(crate) fn choice_field(
         value: value.to_string(),
         kind: crate::tui::FieldKind::Choice(options),
         help: help.to_string(),
+        cursor: 0,
     }
 }
 
@@ -337,6 +341,7 @@ pub(crate) fn checkbox_field(key: &'static str, label: &str, value: bool, help: 
         value: if value { "true" } else { "false" }.to_string(),
         kind: crate::tui::FieldKind::Checkbox,
         help: help.to_string(),
+        cursor: 0,
     }
 }
 

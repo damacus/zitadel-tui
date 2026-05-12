@@ -108,7 +108,8 @@ pub(crate) fn form_review_lines(form: &FormState) -> Vec<Line<'static>> {
         field_line("Submit", &form.submit_label),
         field_line("Fields", &form.fields.len().to_string()),
         field_line("Selected", &form.fields[form.selected_field].label),
-        muted_line("Use j/k to move fields. Type to edit. Space toggles booleans and choices."),
+        muted_line("Type to edit text fields. ↑/↓ or Tab/Shift+Tab cycle fields."),
+        muted_line("←/→ move cursor. Space toggles checkboxes/choices. Esc cancels."),
     ]
 }
 
