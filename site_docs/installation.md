@@ -76,7 +76,8 @@ zitadel-tui config show
 ## Requirements
 
 - Rust 1.89 or newer
-- A Zitadel personal access token or service account file
+- A Zitadel service-account JSON key for administration, or a PAT for
+  compatibility and quick/manual use
 
 See [Authentication](authentication.md) for supported CLI authentication
 methods.

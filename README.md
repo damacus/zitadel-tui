@@ -11,7 +11,9 @@ Current status:
 
 - Rust crate, TUI, CLI, and release automation are the only supported runtime path
 - runtime config is TOML-only in the XDG config directory
-- PAT, service-account, and OAuth Device Flow (OIDC) authentication are supported
+- service-account JSON authentication is recommended for administration; PATs
+  are supported for compatibility, and OAuth Device Flow is available for
+  limited interactive/session use
 - app and user templates remain YAML-based
 
 ## Features
@@ -37,9 +39,11 @@ Current status:
 - **Configuration and Auth**
   - TOML config in XDG config space
   - auth precedence `CLI > env > config > session token`
-  - PAT precedence over service-account credentials within each source
-  - PAT, service-account file, and OAuth Device Flow (`auth login`) support
-  - session tokens cached in `~/.config/zitadel-tui/tokens.json` with auto-refresh
+  - PAT credentials are checked before service-account credentials
+  - service-account JSON authentication for administrative workflows
+  - PAT support for compatibility and quick/manual use
+  - OAuth Device Flow (`auth login`) for limited interactive/session use
+  - OIDC session tokens cached in `~/.config/zitadel-tui/tokens.json` with auto-refresh
 
 ## Installation
 
@@ -253,12 +257,14 @@ Example: `zitadel-tui idps configure-google --client-id google-client-id --clien
 #### `auth`
 
 `auth login`
-: Authenticate via the OAuth 2.0 Device Authorization Grant. Prints a URL and
-short code, waits for browser approval, then saves the access and refresh tokens
-to `~/.config/zitadel-tui/tokens.json`. Requires a Zitadel native app with the
-Device Code grant enabled and JWT access tokens configured for API access.
-The `apps create-native --device-code` path is intended for CLI login sessions
-and saves the returned client ID for future logins.
+: Authenticate via the OAuth 2.0 Device Authorization Grant for limited
+interactive/session use. Prints a URL and short code, waits for browser
+approval, then saves the access and refresh tokens to
+`~/.config/zitadel-tui/tokens.json`. Requires a Zitadel native app with the
+Device Code grant enabled and JWT access tokens configured for userinfo access.
+The cached session is usable for `auth status`, `auth login`, and `auth logout`
+only; use service-account JSON or PAT credentials for app, user, IDP, and admin
+API operations.
 Example: `zitadel-tui --host https://zitadel.example.com auth login`
 
 `--client-id <CLIENT_ID>`
@@ -335,33 +341,88 @@ users:
 
 ## Authentication
 
+`zitadel-tui` is intended for administrative Zitadel workflows. For admin use,
+authenticate with a Zitadel service-account JSON key.
+
 Authentication is resolved in this order:
 
 1. `--token` / `ZITADEL_TOKEN` / `pat` in config (PAT)
 2. `--service-account-file` / `ZITADEL_SERVICE_ACCOUNT_FILE` / `service_account_file` in config
 3. Cached session token from `auth login` (with automatic refresh)
 
-### OAuth Device Flow (recommended for interactive use)
+This is resolution order, not recommendation order. PAT values are checked first
+for compatibility, but service-account JSON keys are preferred for regular
+administrative use.
 
-Register a native app in your Zitadel instance with the **Device Code** grant
-type enabled and JWT access tokens enabled, then log in once:
+### Recommended: Service-Account JSON Key
+
+Service-account authentication uses a private key JWT flow: the CLI signs a
+short-lived assertion with the private key from the JSON key file, exchanges it
+with Zitadel for an access token, and uses that token for API calls.
+
+This is the recommended authentication method for:
+
+- managing OIDC applications
+- creating and updating users
+- configuring identity providers
+- bootstrap and recovery workflows
+- repeatable automation
 
 ```bash
-zitadel-tui --host https://zitadel.example.com apps create-native --name zitadel-tui --device-code
+zitadel-tui \
+  --host https://zitadel.example.com \
+  --service-account-file ./service-account.json \
+  auth status
+```
+
+The same value can be configured with:
+
+```bash
+export ZITADEL_SERVICE_ACCOUNT_FILE=./service-account.json
+```
+
+or in `~/.config/zitadel-tui/config.toml`:
+
+```toml
+zitadel_url = "https://zitadel.example.com"
+service_account_file = "/path/to/service-account.json"
+```
+
+### Supported: Personal Access Token
+
+PAT authentication remains supported for compatibility, quick testing, and
+manual workflows.
+
+PATs are bearer tokens: anyone with the token can use it directly until it
+expires or is revoked. Prefer service-account JSON keys for regular
+administrative use.
+
+```bash
+zitadel-tui \
+  --host https://zitadel.example.com \
+  --token "$ZITADEL_TOKEN" \
+  auth status
+```
+
+### Limited: OAuth Device Flow
+
+Register a native app in your Zitadel instance with the **Device Code** grant
+type enabled and JWT access tokens enabled, then log in:
+
+```bash
 zitadel-tui --host https://zitadel.example.com auth login
 ```
 
 The command prints a URL and a short code. Open the URL in your browser,
 enter the code, and approve the request. The CLI polls in the background and
-saves the access and refresh tokens to
-`~/.config/zitadel-tui/tokens.json` (mode `0600`).
+saves the access and refresh tokens to `~/.config/zitadel-tui/tokens.json`
+(mode `0600`).
 
-After login, subsequent commands use the cached token automatically:
-
-```bash
-zitadel-tui --host https://zitadel.example.com apps list
-zitadel-tui --host https://zitadel.example.com auth status
-```
+OAuth Device Flow is available for limited interactive/session use, but it is
+not the recommended authentication method for administration. Cached OIDC
+sessions can run `auth status`, `auth login`, and `auth logout`; app, user, IDP,
+Auth API, Management API, and Admin API operations require service-account JSON
+or PAT credentials.
 
 Tokens are silently refreshed when they expire. Log out with:
 
@@ -380,6 +441,23 @@ The session token cache lives at:
 It is created with mode `0600`. The cache stores the access token, refresh
 token, expiry timestamp, client ID, and host. The `device_client_id` config
 field remembers your client ID so you only need `--client-id` once.
+
+### ZITADEL Chart v10 Login Service Key
+
+The ZITADEL Helm chart v10 uses an internal login-service keypair for the hosted
+Login UI. That keypair is not used by `zitadel-tui`.
+
+Do not confuse these credentials:
+
+- `zitadel-login-service-key`: internal Kubernetes/chart credential for the
+  hosted ZITADEL Login UI
+- service-account JSON key: client-side admin credential for tools like
+  `zitadel-tui`
+- public HTTPS certificate: browser/client TLS for your Zitadel URL
+
+`zitadel-tui` should authenticate with a Zitadel service-account JSON key for
+administrative workflows. Do not reuse the chart's `zitadel-login-service-key`
+certificate or private key as a CLI credential.
 
 ## Docker
 

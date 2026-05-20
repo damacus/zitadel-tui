@@ -29,15 +29,17 @@ omitted.
 : Personal access token used when `--token` and `ZITADEL_TOKEN` are not set.
 
 `service_account_file`
-: Path to a Zitadel service-account JSON key file used when PAT credentials are
-not provided by CLI, environment, or config.
+: Path to a Zitadel service-account JSON key file. This is the recommended
+credential for administrative workflows.
 
 `device_client_id`
 : Client ID of the Zitadel native app used for `auth login` (OAuth Device Flow).
 Written automatically when you run `auth login` and enter the client ID
 interactively, or when `apps create-native --device-code` returns a client ID.
 Can be set in advance to skip the prompt. Not a secret — this is a public client
-with no `client_secret`.
+with no `client_secret`. OIDC Device Flow sessions are limited to `auth login`,
+`auth logout`, and `auth status`; app, user, IDP, and admin API operations
+require service-account JSON or PAT credentials.
 
 ## Apps and users templates
 
@@ -82,8 +84,8 @@ Authentication is resolved in this order:
 3. TOML config
 4. Cached session token (`auth login`)
 
-Within each source, PAT credentials are checked before service-account
-credentials.
+PAT credentials are checked before service-account credentials. This is
+resolution order, not recommendation order.
 
 Resolution order in practice:
 
@@ -96,14 +98,17 @@ Resolution order in practice:
 7. Session token from `~/.config/zitadel-tui/tokens.json` (with auto-refresh)
 
 See [Authentication](authentication.md) for login commands and credential
-examples.
+examples, including the recommended service-account JSON key path for
+administrative workflows.
 
 ## Token cache
 
-`auth login` saves tokens to `~/.config/zitadel-tui/tokens.json` (mode `0600`).
-The cache stores:
+`auth login` saves OIDC session tokens to
+`~/.config/zitadel-tui/tokens.json` (mode `0600`). These tokens are used for
+limited interactive/session commands, not for app, user, IDP, or admin API
+operations. The cache stores:
 
-- `access_token` — bearer token used for API calls
+- `access_token` — bearer token used for supported OIDC session checks
 - `refresh_token` — used to silently obtain a new access token when it expires
 - `expires_at` — unix timestamp; the access token is refreshed automatically
   when this is in the past
@@ -139,6 +144,7 @@ Example: `zitadel-tui --config ./config.toml`
 - `auth status`, `auth logout`, and `config show` have no command-specific flags
 - `auth login` saves `device_client_id` to the canonical config path if you
   enter it interactively. `apps create-native --device-code` also saves the
-  returned client ID. Subsequent logins only need `auth login` with no flags
+  returned client ID. Subsequent OIDC session logins only need `auth login`
+  with no flags
 - The token cache is host-specific; running `auth login` against a different
   host overwrites the cache
