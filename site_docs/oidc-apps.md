@@ -10,16 +10,15 @@ OIDC applications in `zitadel-tui`.
 You need:
 
 - a Zitadel host URL
-- either a PAT, a service-account JSON file, or a working device-flow login
+- a service-account JSON key, or a PAT for compatibility and quick/manual use
 - an optional `apps.yml` if you want template-based quick setup
 
 Why this can feel harder than it should:
 
-- there are three authentication paths: PAT, service account, and device flow
-- the TUI setup screen still labels OAuth device as a placeholder, so the login
-  journey is not fully explained in-canvas
-- device-flow login is CLI-only and requires a native app that already has
-  Device Code enabled and JWT access tokens configured
+- the credential that is best for app administration is the service-account
+  JSON key, even though PATs are still checked first by the resolver
+- OIDC Device Flow is limited to `auth login`, `auth logout`, and `auth status`;
+  it does not run app administration commands
 - application settings are not editable in place today; if redirect URIs or the
   client type change, the current workflow is to recreate the app
 
@@ -118,12 +117,11 @@ zitadel-tui apps quick-setup --names grafana,paperless,nextcloud
 
 For the smoothest path today:
 
-1. Use a PAT if you already have one.
-2. Use a service-account file if this is automation or shared admin tooling.
-3. Use device flow only after creating a native app with `--device-code`, then
-   run `zitadel-tui auth login`.
+1. Use a service-account JSON key for regular administration, automation, and
+   shared admin tooling.
+2. Use a PAT when you need compatibility or quick/manual access.
+3. Use device flow only for `auth login`, `auth logout`, and `auth status`.
 
-If `auth login` succeeds in the browser but still fails in the CLI, the usual
-cause is that the native app is returning an access token format the Zitadel
-management APIs cannot use. In this project, that means the native app needs
-Device Code enabled and JWT access tokens, not an opaque token.
+If `auth login` succeeds, the cached OIDC session still cannot run app
+administration commands. Use service-account JSON or PAT credentials for the
+commands in this guide.

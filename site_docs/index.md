@@ -26,8 +26,10 @@ identity providers, and runtime configuration.
 - **Configuration and Auth**
   - Canonical TOML config in XDG config space
   - Auth precedence `CLI > env > config > session token`
-  - PAT precedence over service-account credentials within each source
-  - PAT, service-account file, and OAuth Device Flow (`auth login`) authentication are supported
+  - PAT credentials are checked before service-account credentials
+  - Service-account JSON authentication is recommended for administration
+  - PAT authentication is supported for compatibility and quick/manual use
+  - OAuth Device Flow (`auth login`) is available for limited interactive/session use
 
 ## Quick Start
 
@@ -109,7 +111,8 @@ Templates for apps and users remain YAML-based.
 ## Requirements
 
 - Rust 1.89 or newer
-- A Zitadel PAT, service account file, or a native app configured for Device Code login
+- A Zitadel service-account JSON key for administration, or a PAT for
+  compatibility and quick/manual use
 
 ## License
 
