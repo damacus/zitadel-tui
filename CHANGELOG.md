@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/damacus/zitadel-tui/compare/v0.1.7...v0.1.8) (2026-07-13)
+
+
+### Bug Fixes
+
+* **auth:** protect existing token cache ([#124](https://github.com/damacus/zitadel-tui/issues/124)) ([caaad51](https://github.com/damacus/zitadel-tui/commit/caaad5139ab10d2a8e64a58b381c31d6bc993fbe))
+
 ## [0.1.7](https://github.com/damacus/zitadel-tui/compare/v0.1.6...v0.1.7) (2026-05-12)
 
 
