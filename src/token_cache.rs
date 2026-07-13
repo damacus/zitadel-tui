@@ -88,14 +88,16 @@ fn token_cache_default_path() -> Result<PathBuf> {
 #[cfg(unix)]
 fn write_secure_file(path: &std::path::Path, contents: &str) -> Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
     let mut file = fs::OpenOptions::new()
         .create(true)
-        .truncate(true)
+        .truncate(false)
         .write(true)
         .mode(0o600)
         .open(path)?;
+    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    file.set_len(0)?;
     file.write_all(contents.as_bytes())?;
     Ok(())
 }
@@ -153,5 +155,24 @@ mod tests {
         let back: TokenCache = serde_json::from_str(&json).unwrap();
         assert_eq!(back.access_token, "acc");
         assert_eq!(back.host, "https://zitadel.example.com");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_restricts_permissions_of_existing_cache() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = std::env::temp_dir().join(format!(
+            "zitadel-tui-test-permissions-{}.json",
+            std::process::id()
+        ));
+        fs::write(&path, "stale").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        write_secure_file(&path, "secret").unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        let _ = fs::remove_file(path);
+        assert_eq!(mode, 0o600);
     }
 }
