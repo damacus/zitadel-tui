@@ -188,13 +188,14 @@ fn write_secure_file(path: &Path, contents: &str) -> Result<()> {
 
     let mut file = fs::OpenOptions::new()
         .create(true)
-        .truncate(true)
+        .truncate(false)
         .write(true)
         .mode(0o600)
         .open(path)?;
+    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    file.set_len(0)?;
     file.write_all(contents.as_bytes())?;
     file.sync_all()?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 
@@ -336,6 +337,21 @@ mod tests {
             assert_eq!(file_mode, 0o600);
             assert_eq!(dir_mode, 0o700);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_restricts_permissions_of_existing_config() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = temp_dir("existing-save").join("config.toml");
+        fs::write(&path, "stale").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        AppConfig::default().write_to_path(&path).unwrap();
+
+        let file_mode = fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(file_mode, 0o600);
     }
 
     #[test]
