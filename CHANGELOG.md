@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/damacus/zitadel-tui/compare/v0.1.8...v0.1.9) (2026-09-25)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate jsonwebtoken to v11 ([#136](https://github.com/damacus/zitadel-tui/issues/136)) ([89e9795](https://github.com/damacus/zitadel-tui/commit/89e9795972adf2d2bb95fc566cdd0332f815cf96))
+
 ## [0.1.8](https://github.com/damacus/zitadel-tui/compare/v0.1.7...v0.1.8) (2026-07-13)
 
 
