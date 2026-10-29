@@ -6,6 +6,7 @@ use crate::{
     auth::{resolve_access_token, validate_login_session_token},
     cli::{AuthAction, AuthCommand, Cli},
     config::AppConfig,
+    error::CommandError,
     oidc, token_cache,
 };
 
@@ -15,7 +16,7 @@ pub async fn execute_auth_command(
     command: &AuthCommand,
     args: &Cli,
     config: &AppConfig,
-) -> Result<Value> {
+) -> Result<Value, CommandError> {
     match &command.action {
         AuthAction::Login(login_args) => {
             let host = resolved_host(args, config)?;
@@ -24,15 +25,17 @@ pub async fn execute_auth_command(
             } else if let Some(id) = &config.device_client_id {
                 id.clone()
             } else {
-                let id = prompt_for_client_id()?;
-                let mut updated = config.clone();
-                updated.device_client_id = Some(id.clone());
-                let _ = updated.save_to_canonical_path();
-                id
+                // No prompts exist in the headless CLI — agents must pass
+                // the value explicitly.
+                return Err(CommandError::usage(
+                    "client ID required: pass --client-id or set device_client_id in config",
+                ));
             };
 
             let http = reqwest::Client::new();
-            let auth_resp = oidc::device_authorize(&http, &host, &client_id).await?;
+            let auth_resp = oidc::device_authorize(&http, &host, &client_id)
+                .await
+                .map_err(CommandError::from)?;
 
             eprintln!("\nOpen this URL in your browser:");
             eprintln!(
@@ -59,21 +62,35 @@ pub async fn execute_auth_command(
                         interval += 5;
                         eprint!(".");
                     }
-                    Err(oidc::PollError::Fatal(error)) => return Err(error),
+                    Err(oidc::PollError::Fatal(error)) => {
+                        return Err(CommandError::from(error));
+                    }
                 }
             };
             eprintln!("\nAuthenticated.");
 
-            persist_login_session(&http, &host, &client_id, tokens).await?;
+            persist_login_session(&http, &host, &client_id, tokens)
+                .await
+                .map_err(CommandError::from)?;
 
-            Ok(serde_json::json!({
+            let mut result = serde_json::json!({
                 "status": "authenticated",
                 "host": host,
-                "token_cache": token_cache::TokenCache::path()?.display().to_string(),
-            }))
+                "verification_uri": auth_resp.verification_uri,
+                "user_code": auth_resp.user_code,
+                "token_cache": token_cache::TokenCache::path()
+                    .map_err(|error| CommandError::io(error.to_string()))?
+                    .display()
+                    .to_string(),
+            });
+            if let Some(complete) = &auth_resp.verification_uri_complete {
+                result["verification_uri_complete"] = Value::String(complete.clone());
+            }
+            Ok(result)
         }
         AuthAction::Logout => {
-            token_cache::TokenCache::clear()?;
+            token_cache::TokenCache::clear()
+                .map_err(|error| CommandError::io(error.to_string()))?;
             Ok(serde_json::json!({ "status": "logged out" }))
         }
         AuthAction::Status => {
@@ -86,13 +103,17 @@ pub async fn execute_auth_command(
                 args.service_account_file.clone(),
                 config,
             )
-            .await?;
+            .await
+            .map_err(|error| CommandError::auth(error.to_string()))?;
             let (user_id, login_name) = if auth.is_oidc_session() {
-                let userinfo = session_userinfo(&http, &host, &auth.token).await?;
+                let userinfo = session_userinfo(&http, &host, &auth.token)
+                    .await
+                    .map_err(CommandError::from)?;
                 auth_status_userinfo_identity(&userinfo)
             } else {
-                let client = ZitadelClient::new(host.clone(), auth.token)?;
-                let me = client.whoami().await?;
+                let client =
+                    ZitadelClient::new(host.clone(), auth.token).map_err(CommandError::from)?;
+                let me = client.whoami().await.map_err(CommandError::from)?;
                 auth_status_api_identity(&me)
             };
             Ok(serde_json::json!({
@@ -152,17 +173,6 @@ fn auth_status_userinfo_identity(userinfo: &Value) -> (Value, Value) {
         .unwrap_or(Value::Null);
 
     (user_id, login_name)
-}
-
-fn prompt_for_client_id() -> Result<String> {
-    eprint!("Zitadel native app client ID: ");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let id = input.trim().to_string();
-    if id.is_empty() {
-        anyhow::bail!("client ID cannot be empty");
-    }
-    Ok(id)
 }
 
 pub async fn persist_login_session(
@@ -412,7 +422,7 @@ mod tests {
         };
         cache.save().unwrap();
 
-        let args = Cli::parse_from(["zitadel-tui", "--once", "auth", "status"]);
+        let args = Cli::parse_from(["zitadel-tui", "auth", "status"]);
         let command = match &args.command {
             Some(crate::cli::Command::Auth(command)) => command.clone(),
             other => panic!("unexpected command: {other:?}"),
@@ -468,7 +478,6 @@ mod tests {
 
         let args = Cli::parse_from([
             "zitadel-tui",
-            "--once",
             "--token",
             "service-account-token",
             "auth",

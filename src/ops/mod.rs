@@ -9,9 +9,12 @@ pub mod users;
 use anyhow::Result;
 use serde_json::{json, Value};
 
-use crate::api::{
-    client::ZitadelClient,
-    models::{App, Idp, User},
+use crate::{
+    api::{
+        client::ZitadelClient,
+        models::{App, Idp, User},
+    },
+    error::{CommandError, ErrorKind},
 };
 
 /// Exact-match selector for application lookup.
@@ -38,29 +41,54 @@ pub enum IdpSelector {
 }
 
 impl AppSelector {
-    fn describe(&self) -> String {
+    pub fn describe(&self) -> String {
         match self {
             Self::Id(id) => format!("app '{id}'"),
             Self::Name(name) => format!("app '{name}'"),
         }
     }
+
+    /// Selector echo for `error.details.lookup` on not_found/ambiguous.
+    pub fn lookup(&self) -> Value {
+        match self {
+            Self::Id(id) => json!({ "field": "app_id", "value": id }),
+            Self::Name(name) => json!({ "field": "name", "value": name }),
+        }
+    }
 }
 
 impl UserSelector {
-    fn describe(&self) -> String {
+    pub fn describe(&self) -> String {
         match self {
             Self::Id(id) => format!("user '{id}'"),
             Self::Username(name) => format!("user '{name}'"),
             Self::Email(email) => format!("user '{email}'"),
         }
     }
+
+    /// Selector echo for `error.details.lookup` on not_found/ambiguous.
+    pub fn lookup(&self) -> Value {
+        match self {
+            Self::Id(id) => json!({ "field": "user_id", "value": id }),
+            Self::Username(name) => json!({ "field": "username", "value": name }),
+            Self::Email(email) => json!({ "field": "email", "value": email }),
+        }
+    }
 }
 
 impl IdpSelector {
-    fn describe(&self) -> String {
+    pub fn describe(&self) -> String {
         match self {
             Self::Id(id) => format!("idp '{id}'"),
             Self::Name(name) => format!("idp '{name}'"),
+        }
+    }
+
+    /// Selector echo for `error.details.lookup` on not_found/ambiguous.
+    pub fn lookup(&self) -> Value {
+        match self {
+            Self::Id(id) => json!({ "field": "idp_id", "value": id }),
+            Self::Name(name) => json!({ "field": "name", "value": name }),
         }
     }
 }
@@ -78,7 +106,8 @@ pub enum ResolveOutcome<T> {
 impl<T> ResolveOutcome<T> {
     /// Maps the outcome to a `Result` using the legacy "not found"/"ambiguous"
     /// error strings; `what` describes the looked-up resource, e.g.
-    /// `app 'grafana'`. Task 4 replaces this mapping with typed error kinds.
+    /// `app 'grafana'`. Used by the TUI conductor; the headless boundary uses
+    /// [`Self::into_command_result`] instead.
     pub fn into_result(self, what: &str) -> Result<T> {
         match self {
             Self::One(value) => Ok(value),
@@ -86,6 +115,26 @@ impl<T> ResolveOutcome<T> {
             Self::Ambiguous(matches) => {
                 anyhow::bail!("ambiguous {what}: matches {} entries", matches.len())
             }
+        }
+    }
+
+    /// Maps the outcome to typed error kinds for the headless command
+    /// boundary: `NotFound` carries `details.lookup` (the selector echo,
+    /// e.g. `AppSelector::lookup()`), `Ambiguous` additionally carries
+    /// `details.matches` (`[{"id","name"},…]`).
+    pub fn into_command_result(self, what: &str, lookup: Value) -> Result<T, CommandError> {
+        match self {
+            Self::One(value) => Ok(value),
+            Self::NotFound => Err(CommandError::with_details(
+                ErrorKind::NotFound,
+                format!("{what} not found"),
+                json!({ "lookup": lookup }),
+            )),
+            Self::Ambiguous(matches) => Err(CommandError::with_details(
+                ErrorKind::Ambiguous,
+                format!("ambiguous {what}: matches {} entries", matches.len()),
+                json!({ "lookup": lookup, "matches": matches }),
+            )),
         }
     }
 }
@@ -208,6 +257,66 @@ mod tests {
         assert_eq!(
             ambiguous.into_result("app 'x'").unwrap_err().to_string(),
             "ambiguous app 'x': matches 2 entries"
+        );
+    }
+
+    #[test]
+    fn into_command_result_maps_typed_kinds_and_details() {
+        let one: ResolveOutcome<u32> = ResolveOutcome::One(7);
+        assert_eq!(one.into_command_result("app 'x'", json!({})).unwrap(), 7);
+
+        let not_found: ResolveOutcome<u32> = ResolveOutcome::NotFound;
+        let error = not_found
+            .into_command_result("app 'x'", json!({"field": "name", "value": "x"}))
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::NotFound);
+        assert_eq!(error.message, "app 'x' not found");
+        assert_eq!(
+            error.details,
+            Some(json!({"lookup": {"field": "name", "value": "x"}}))
+        );
+
+        let ambiguous: ResolveOutcome<u32> =
+            ResolveOutcome::Ambiguous(vec![json!({"id": "a"}), json!({"id": "b"})]);
+        let error = ambiguous
+            .into_command_result("app 'x'", json!({"field": "name", "value": "x"}))
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Ambiguous);
+        assert_eq!(error.message, "ambiguous app 'x': matches 2 entries");
+        assert_eq!(
+            error.details,
+            Some(json!({
+                "lookup": {"field": "name", "value": "x"},
+                "matches": [{"id": "a"}, {"id": "b"}],
+            }))
+        );
+    }
+
+    #[test]
+    fn selectors_describe_their_lookup() {
+        assert_eq!(
+            AppSelector::Id("app-1".to_string()).lookup(),
+            json!({"field": "app_id", "value": "app-1"})
+        );
+        assert_eq!(
+            AppSelector::Name("grafana".to_string()).lookup(),
+            json!({"field": "name", "value": "grafana"})
+        );
+        assert_eq!(
+            UserSelector::Username("admin".to_string()).lookup(),
+            json!({"field": "username", "value": "admin"})
+        );
+        assert_eq!(
+            UserSelector::Email("a@b.c".to_string()).lookup(),
+            json!({"field": "email", "value": "a@b.c"})
+        );
+        assert_eq!(
+            IdpSelector::Id("idp-1".to_string()).lookup(),
+            json!({"field": "idp_id", "value": "idp-1"})
+        );
+        assert_eq!(
+            IdpSelector::Name("Google".to_string()).lookup(),
+            json!({"field": "name", "value": "Google"})
         );
     }
 
