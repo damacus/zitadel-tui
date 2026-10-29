@@ -1,56 +1,48 @@
+//! JSON envelope shapes printed to stdout by the headless CLI. The wire
+//! format is the agent contract: success is
+//! `{"command":…,"ok":true,"result":…}`, failure is
+//! `{"command":…,"ok":false,"error":{"kind":…,"message":…,"details"?}}`.
+//! There is no human output mode — the TUI is the human interface.
+
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::cli::Command;
+use crate::error::{CommandError, ErrorKind};
 
 #[derive(Debug, Serialize)]
 pub struct CommandEnvelope<T: Serialize> {
-    pub command: String,
+    pub command: &'static str,
     pub ok: bool,
     pub result: T,
 }
 
-pub fn print_human(command: &Command, result: &Value) {
-    print!("{}", format_human(command, result));
+#[derive(Debug, Serialize)]
+pub struct ErrorEnvelope {
+    pub command: &'static str,
+    pub ok: bool,
+    pub error: ErrorBody,
 }
 
-fn format_human(command: &Command, result: &Value) -> String {
-    match command {
-        Command::Apps(_) | Command::Users(_) | Command::Idps(_) => {
-            if let Some(items) = result.as_array() {
-                if items.is_empty() {
-                    format!("{}\n", empty_list_message(command))
-                } else {
-                    items
-                        .iter()
-                        .map(format_json_value)
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                        + "\n"
-                }
-            } else {
-                format!("{}\n", format_json_value(result))
-            }
-        }
-        Command::Auth(_) | Command::Config(_) => {
-            format!("{}\n", format_json_value(result))
-        }
-    }
+#[derive(Debug, Serialize)]
+pub struct ErrorBody {
+    pub kind: ErrorKind,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<Value>,
 }
 
-fn empty_list_message(command: &Command) -> &'static str {
-    match command {
-        Command::Apps(_) => "No apps found.",
-        Command::Users(_) => "No users found.",
-        Command::Idps(_) => "No identity providers found.",
-        Command::Auth(_) | Command::Config(_) => {
-            unreachable!("empty list messages are only for list resources")
+impl ErrorEnvelope {
+    pub fn new(command: &'static str, error: &CommandError) -> Self {
+        Self {
+            command,
+            ok: false,
+            error: ErrorBody {
+                kind: error.kind,
+                message: error.message.clone(),
+                details: error.details.clone(),
+            },
         }
     }
-}
-
-fn format_json_value(value: &Value) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }
 
 #[cfg(test)]
@@ -58,49 +50,61 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::cli::{
-        AppsAction, AppsCommand, Command, IdpsAction, IdpsCommand, UsersAction, UsersCommand,
-    };
 
     #[test]
-    fn empty_apps_list_prints_empty_state() {
-        let command = Command::Apps(AppsCommand {
-            action: AppsAction::List,
-        });
-
-        assert_eq!(format_human(&command, &json!([])), "No apps found.\n");
-    }
-
-    #[test]
-    fn empty_users_list_prints_empty_state() {
-        let command = Command::Users(UsersCommand {
-            action: UsersAction::List,
-        });
-
-        assert_eq!(format_human(&command, &json!([])), "No users found.\n");
-    }
-
-    #[test]
-    fn empty_idps_list_prints_empty_state() {
-        let command = Command::Idps(IdpsCommand {
-            action: IdpsAction::List,
-        });
+    fn command_envelope_serializes_success_shape() {
+        let value = serde_json::to_value(CommandEnvelope {
+            command: "apps.list",
+            ok: true,
+            result: json!([{ "id": "app-1" }]),
+        })
+        .unwrap();
 
         assert_eq!(
-            format_human(&command, &json!([])),
-            "No identity providers found.\n"
+            value,
+            json!({
+                "command": "apps.list",
+                "ok": true,
+                "result": [{ "id": "app-1" }],
+            })
         );
     }
 
     #[test]
-    fn non_empty_list_still_prints_pretty_json_items() {
-        let command = Command::Apps(AppsCommand {
-            action: AppsAction::List,
-        });
+    fn error_envelope_omits_details_when_none() {
+        let error = CommandError::usage("bad args");
+        let value = serde_json::to_value(ErrorEnvelope::new("auth.login", &error)).unwrap();
 
         assert_eq!(
-            format_human(&command, &json!([{ "id": "app-1" }])),
-            "{\n  \"id\": \"app-1\"\n}\n"
+            value,
+            json!({
+                "command": "auth.login",
+                "ok": false,
+                "error": { "kind": "usage", "message": "bad args" },
+            })
+        );
+    }
+
+    #[test]
+    fn error_envelope_includes_details_when_present() {
+        let error = CommandError::with_details(
+            ErrorKind::Ambiguous,
+            "ambiguous app 'grafana': matches 2 entries",
+            json!({ "matches": [{ "id": "a" }, { "id": "b" }] }),
+        );
+        let value = serde_json::to_value(ErrorEnvelope::new("apps.delete", &error)).unwrap();
+
+        assert_eq!(
+            value,
+            json!({
+                "command": "apps.delete",
+                "ok": false,
+                "error": {
+                    "kind": "ambiguous",
+                    "message": "ambiguous app 'grafana': matches 2 entries",
+                    "details": { "matches": [{ "id": "a" }, { "id": "b" }] },
+                },
+            })
         );
     }
 }

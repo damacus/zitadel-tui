@@ -20,18 +20,6 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub config: Option<PathBuf>,
 
-    #[arg(long, global = true)]
-    pub json: bool,
-
-    #[arg(
-        long,
-        global = true,
-        hide_short_help = true,
-        hide_long_help = true,
-        help = "Deprecated compatibility flag; subcommands run non-interactively by default"
-    )]
-    pub once: bool,
-
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -202,13 +190,37 @@ pub struct ConfigureGoogleArgs {
     pub name: String,
 }
 
-pub fn command_name(command: &Command) -> String {
+/// Dot-path identifying each command in the JSON envelope's `command`
+/// field. Part of the agent contract — keep values stable.
+pub fn command_path(command: &Command) -> &'static str {
     match command {
-        Command::Apps(_) => "apps".to_string(),
-        Command::Users(_) => "users".to_string(),
-        Command::Idps(_) => "idps".to_string(),
-        Command::Auth(_) => "auth".to_string(),
-        Command::Config(_) => "config".to_string(),
+        Command::Apps(apps) => match &apps.action {
+            AppsAction::List => "apps.list",
+            AppsAction::Create(_) => "apps.create",
+            AppsAction::CreateNative(_) => "apps.create-native",
+            AppsAction::Delete(_) => "apps.delete",
+            AppsAction::RegenerateSecret(_) => "apps.regenerate-secret",
+            AppsAction::QuickSetup(_) => "apps.quick-setup",
+        },
+        Command::Users(users) => match &users.action {
+            UsersAction::List => "users.list",
+            UsersAction::Create(_) => "users.create",
+            UsersAction::CreateAdmin(_) => "users.create-admin",
+            UsersAction::GrantIamOwner(_) => "users.grant-iam-owner",
+            UsersAction::QuickSetup => "users.quick-setup",
+        },
+        Command::Idps(idps) => match &idps.action {
+            IdpsAction::List => "idps.list",
+            IdpsAction::ConfigureGoogle(_) => "idps.configure-google",
+        },
+        Command::Auth(auth) => match &auth.action {
+            AuthAction::Login(_) => "auth.login",
+            AuthAction::Logout => "auth.logout",
+            AuthAction::Status => "auth.status",
+        },
+        Command::Config(config) => match &config.action {
+            ConfigAction::Show => "config.show",
+        },
     }
 }
 
@@ -245,16 +257,8 @@ mod tests {
 
     #[test]
     fn parses_create_app_with_template() {
-        let cli = Cli::parse_from([
-            "zitadel-tui",
-            "--json",
-            "apps",
-            "create",
-            "--template",
-            "grafana",
-        ]);
+        let cli = Cli::parse_from(["zitadel-tui", "apps", "create", "--template", "grafana"]);
 
-        assert!(cli.json);
         match cli.command {
             Some(Command::Apps(AppsCommand {
                 action: AppsAction::Create(create),
@@ -293,19 +297,145 @@ mod tests {
     }
 
     #[test]
-    fn command_name_matches_variants() {
-        assert_eq!(
-            command_name(&Command::Auth(AuthCommand {
-                action: AuthAction::Status
-            })),
-            "auth"
-        );
-        assert_eq!(
-            command_name(&Command::Config(ConfigCommand {
-                action: ConfigAction::Show
-            })),
-            "config"
-        );
+    fn command_paths_cover_every_variant() {
+        let cases: [(Command, &str); 17] = [
+            (
+                Command::Apps(AppsCommand {
+                    action: AppsAction::List,
+                }),
+                "apps.list",
+            ),
+            (
+                Command::Apps(AppsCommand {
+                    action: AppsAction::Create(CreateAppArgs {
+                        name: None,
+                        redirect_uris: vec![],
+                        public: false,
+                        template: None,
+                    }),
+                }),
+                "apps.create",
+            ),
+            (
+                Command::Apps(AppsCommand {
+                    action: AppsAction::CreateNative(CreateNativeAppArgs {
+                        name: "x".to_string(),
+                        device_code: false,
+                    }),
+                }),
+                "apps.create-native",
+            ),
+            (
+                Command::Apps(AppsCommand {
+                    action: AppsAction::Delete(DeleteAppArgs {
+                        app_id: "a".to_string(),
+                    }),
+                }),
+                "apps.delete",
+            ),
+            (
+                Command::Apps(AppsCommand {
+                    action: AppsAction::RegenerateSecret(RegenerateSecretArgs {
+                        app_id: "a".to_string(),
+                        client_id: None,
+                    }),
+                }),
+                "apps.regenerate-secret",
+            ),
+            (
+                Command::Apps(AppsCommand {
+                    action: AppsAction::QuickSetup(QuickSetupAppsArgs { names: vec![] }),
+                }),
+                "apps.quick-setup",
+            ),
+            (
+                Command::Users(UsersCommand {
+                    action: UsersAction::List,
+                }),
+                "users.list",
+            ),
+            (
+                Command::Users(UsersCommand {
+                    action: UsersAction::Create(CreateUserArgs {
+                        email: "e".to_string(),
+                        first_name: "f".to_string(),
+                        last_name: "l".to_string(),
+                        username: None,
+                    }),
+                }),
+                "users.create",
+            ),
+            (
+                Command::Users(UsersCommand {
+                    action: UsersAction::CreateAdmin(CreateAdminArgs {
+                        username: "u".to_string(),
+                        first_name: "f".to_string(),
+                        last_name: "l".to_string(),
+                        email: "e".to_string(),
+                        password: None,
+                    }),
+                }),
+                "users.create-admin",
+            ),
+            (
+                Command::Users(UsersCommand {
+                    action: UsersAction::GrantIamOwner(GrantUserArgs {
+                        user_id: "u".to_string(),
+                    }),
+                }),
+                "users.grant-iam-owner",
+            ),
+            (
+                Command::Users(UsersCommand {
+                    action: UsersAction::QuickSetup,
+                }),
+                "users.quick-setup",
+            ),
+            (
+                Command::Idps(IdpsCommand {
+                    action: IdpsAction::List,
+                }),
+                "idps.list",
+            ),
+            (
+                Command::Idps(IdpsCommand {
+                    action: IdpsAction::ConfigureGoogle(ConfigureGoogleArgs {
+                        client_id: "c".to_string(),
+                        client_secret: None,
+                        name: "Google".to_string(),
+                    }),
+                }),
+                "idps.configure-google",
+            ),
+            (
+                Command::Auth(AuthCommand {
+                    action: AuthAction::Login(LoginArgs { client_id: None }),
+                }),
+                "auth.login",
+            ),
+            (
+                Command::Auth(AuthCommand {
+                    action: AuthAction::Logout,
+                }),
+                "auth.logout",
+            ),
+            (
+                Command::Auth(AuthCommand {
+                    action: AuthAction::Status,
+                }),
+                "auth.status",
+            ),
+            (
+                Command::Config(ConfigCommand {
+                    action: ConfigAction::Show,
+                }),
+                "config.show",
+            ),
+        ];
+
+        for (command, expected) in cases {
+            assert_eq!(command_path(&command), expected);
+        }
     }
 
     #[test]
@@ -324,29 +454,15 @@ mod tests {
     }
 
     #[test]
-    fn parses_once_flag() {
-        let cli = Cli::parse_from(["zitadel-tui", "--once", "apps", "list"]);
-        assert!(cli.once);
+    fn removed_once_flag_is_rejected() {
+        // BREAKING: --once was removed; subcommands are non-interactive.
+        assert!(Cli::try_parse_from(["zitadel-tui", "--once", "apps", "list"]).is_err());
     }
 
     #[test]
-    fn parses_once_with_host_and_subcommand() {
-        let cli = Cli::parse_from([
-            "zitadel-tui",
-            "--once",
-            "--host",
-            "https://zitadel.example.com",
-            "apps",
-            "list",
-        ]);
-        assert!(cli.once);
-        assert_eq!(cli.host.as_deref(), Some("https://zitadel.example.com"));
-        assert!(matches!(
-            cli.command,
-            Some(Command::Apps(AppsCommand {
-                action: AppsAction::List
-            }))
-        ));
+    fn removed_json_flag_is_rejected() {
+        // BREAKING: --json was removed; output is always the JSON envelope.
+        assert!(Cli::try_parse_from(["zitadel-tui", "--json", "apps", "list"]).is_err());
     }
 
     #[test]
@@ -405,7 +521,6 @@ mod tests {
     fn host_after_subcommand_is_accepted() {
         let cli = Cli::parse_from([
             "zitadel-tui",
-            "--once",
             "apps",
             "list",
             "--host",
@@ -416,40 +531,14 @@ mod tests {
 
     #[test]
     fn token_after_subcommand_is_accepted() {
-        let cli = Cli::parse_from([
-            "zitadel-tui",
-            "--once",
-            "apps",
-            "list",
-            "--token",
-            "my-token",
-        ]);
+        let cli = Cli::parse_from(["zitadel-tui", "apps", "list", "--token", "my-token"]);
         assert_eq!(cli.token.as_deref(), Some("my-token"));
     }
 
     #[test]
     fn project_id_after_subcommand_is_accepted() {
-        let cli = Cli::parse_from([
-            "zitadel-tui",
-            "--once",
-            "apps",
-            "list",
-            "--project-id",
-            "proj-456",
-        ]);
+        let cli = Cli::parse_from(["zitadel-tui", "apps", "list", "--project-id", "proj-456"]);
         assert_eq!(cli.project_id.as_deref(), Some("proj-456"));
-    }
-
-    #[test]
-    fn json_after_subcommand_is_accepted() {
-        let cli = Cli::parse_from(["zitadel-tui", "--once", "apps", "list", "--json"]);
-        assert!(cli.json);
-    }
-
-    #[test]
-    fn once_after_subcommand_is_accepted() {
-        let cli = Cli::parse_from(["zitadel-tui", "apps", "list", "--once"]);
-        assert!(cli.once);
     }
 
     #[test]
@@ -458,17 +547,13 @@ mod tests {
             "zitadel-tui",
             "apps",
             "list",
-            "--once",
             "--host",
             "https://zitadel.example.com",
             "--token",
             "tok",
             "--project-id",
             "proj-1",
-            "--json",
         ]);
-        assert!(cli.once);
-        assert!(cli.json);
         assert_eq!(cli.host.as_deref(), Some("https://zitadel.example.com"));
         assert_eq!(cli.token.as_deref(), Some("tok"));
         assert_eq!(cli.project_id.as_deref(), Some("proj-1"));

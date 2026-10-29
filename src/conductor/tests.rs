@@ -61,8 +61,6 @@ fn begin_config_unknown_action_browses() {
             token: None,
             service_account_file: None,
             config: None,
-            json: false,
-            once: false,
             command: None,
         },
         config: AppConfig::default(),
@@ -89,8 +87,6 @@ fn test_conductor(host: &str) -> TuiConductor {
             token: None,
             service_account_file: None,
             config: None,
-            json: false,
-            once: false,
             command: None,
         },
         config: AppConfig {
@@ -220,8 +216,6 @@ async fn bootstrap_marks_cached_oidc_session_as_api_limited() {
             token: None,
             service_account_file: None,
             config: None,
-            json: false,
-            once: false,
             command: None,
         },
         AppConfig {

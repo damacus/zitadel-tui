@@ -2,64 +2,52 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 use zitadel_tui::{
-    cli::{command_name, Cli},
+    cli::{command_path, Cli},
     commands::execute_command,
     conductor::TuiConductor,
     config::AppConfig,
-    output::{print_human, CommandEnvelope},
+    error::{CommandError, ErrorKind},
+    output::{CommandEnvelope, ErrorEnvelope},
     tui_runtime::run_tui,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Cli::parse();
-    validate_cli(&args)?;
-    let config = load_config(&args)?;
 
     if let Some(command) = &args.command {
-        match execute_command(command, &args, &config).await {
+        let path = command_path(command);
+        // Config load failures are still reported in the envelope so agents
+        // get a single parse target on stdout.
+        let outcome = match load_config(&args) {
+            Ok(config) => execute_command(command, &args, &config).await,
+            Err(error) => Err(CommandError::new(ErrorKind::Config, error.to_string())),
+        };
+        return match outcome {
             Ok(result) => {
-                if args.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&CommandEnvelope {
-                            command: command_name(command),
-                            ok: true,
-                            result,
-                        })?
-                    );
-                } else {
-                    print_human(command, &result);
-                }
-                return Ok(());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&CommandEnvelope {
+                        command: path,
+                        ok: true,
+                        result,
+                    })?
+                );
+                Ok(())
             }
             Err(error) => {
-                if args.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "command": command_name(command),
-                            "ok": false,
-                            "error": error.to_string()
-                        }))?
-                    );
-                    return Ok(());
-                }
-                return Err(error);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&ErrorEnvelope::new(path, &error))?
+                );
+                std::process::exit(1);
             }
-        }
+        };
     }
 
+    let config = load_config(&args)?;
     let conductor = TuiConductor::bootstrap(args.clone(), config).await;
     run_tui(conductor).await
-}
-
-fn validate_cli(args: &Cli) -> Result<()> {
-    if args.once && args.command.is_none() {
-        anyhow::bail!("--once is deprecated and only accepted with a subcommand");
-    }
-
-    Ok(())
 }
 
 fn load_config(args: &Cli) -> Result<AppConfig> {
@@ -72,40 +60,4 @@ fn load_config(args: &Cli) -> Result<AppConfig> {
     }
 
     AppConfig::load()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn accepts_command_without_once() {
-        let cli = Cli::parse_from(["zitadel-tui", "apps", "list"]);
-        assert!(validate_cli(&cli).is_ok());
-    }
-
-    #[test]
-    fn rejects_once_without_command() {
-        let cli = Cli::parse_from(["zitadel-tui", "--once"]);
-        assert!(validate_cli(&cli).is_err());
-    }
-
-    #[test]
-    fn accepts_once_with_command() {
-        let cli = Cli::parse_from(["zitadel-tui", "--once", "apps", "list"]);
-        assert!(validate_cli(&cli).is_ok());
-    }
-
-    #[test]
-    fn accepts_once_with_host_and_command() {
-        let cli = Cli::parse_from([
-            "zitadel-tui",
-            "--host",
-            "https://zitadel.example.com",
-            "--once",
-            "apps",
-            "list",
-        ]);
-        assert!(validate_cli(&cli).is_ok());
-    }
 }

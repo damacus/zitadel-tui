@@ -4,6 +4,7 @@ pub mod cli;
 pub mod commands;
 pub mod conductor;
 pub mod config;
+pub mod error;
 pub mod oidc;
 pub mod ops;
 pub mod output;

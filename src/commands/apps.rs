@@ -1,35 +1,50 @@
-use anyhow::{Context, Result};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::{
     api::models::CreateAppResult,
     cli::{AppsAction, AppsCommand, Cli},
     config::AppConfig,
+    error::{CommandError, ErrorKind},
 };
 
 use super::shared::authenticated_client;
+
+/// `apps create`/`quick-setup` template lookup failure — `NotFound` with
+/// the lookup echoed in `details`.
+fn template_not_found(name: &str) -> CommandError {
+    CommandError::with_details(
+        ErrorKind::NotFound,
+        format!("template {name} not found"),
+        json!({ "lookup": { "field": "template", "value": name } }),
+    )
+}
 
 pub async fn execute_apps_command(
     command: &AppsCommand,
     args: &Cli,
     config: &AppConfig,
-) -> Result<Value> {
+) -> Result<Value, CommandError> {
     let client = authenticated_client(args, config).await?;
     let project_id =
         crate::ops::resolve_project_id(&client, args.project_id.clone(), config.project_id.clone())
-            .await?;
+            .await
+            .map_err(CommandError::from)?;
 
     match &command.action {
         AppsAction::List => Ok(serde_json::to_value(
-            crate::ops::apps::list(&client, &project_id).await?,
+            crate::ops::apps::list(&client, &project_id)
+                .await
+                .map_err(CommandError::from)?,
         )?),
         AppsAction::Create(create) => {
-            let templates = config.templates()?;
+            let templates = config
+                .templates()
+                .map_err(|error| CommandError::config(error.to_string()))?;
             let (name, redirect_uris, public) = if let Some(template_name) = &create.template {
                 let template = templates
                     .apps
                     .get(template_name)
-                    .with_context(|| format!("template {template_name} not found"))?;
+                    .ok_or_else(|| template_not_found(template_name))?;
                 (
                     template_name.clone(),
                     template.redirect_uris.clone(),
@@ -37,22 +52,19 @@ pub async fn execute_apps_command(
                 )
             } else {
                 if create.redirect_uris.is_empty() {
-                    anyhow::bail!(
-                        "--redirect-uris is required for apps create when not using --template"
-                    );
+                    return Err(CommandError::usage(
+                        "--redirect-uris is required for apps create when not using --template",
+                    ));
                 }
-                (
-                    create
-                        .name
-                        .clone()
-                        .context("app name is required when not using --template")?,
-                    create.redirect_uris.clone(),
-                    create.public,
-                )
+                let name = create.name.clone().ok_or_else(|| {
+                    CommandError::usage("app name is required when not using --template")
+                })?;
+                (name, create.redirect_uris.clone(), create.public)
             };
             Ok(serde_json::to_value(
                 crate::ops::apps::create_oidc(&client, &project_id, &name, redirect_uris, public)
-                    .await?,
+                    .await
+                    .map_err(CommandError::from)?,
             )?)
         }
         AppsAction::CreateNative(native) => {
@@ -62,7 +74,8 @@ pub async fn execute_apps_command(
                 &native.name,
                 native.device_code,
             )
-            .await?;
+            .await
+            .map_err(CommandError::from)?;
 
             if native.device_code {
                 remember_device_client_id(config, &result)?;
@@ -71,12 +84,15 @@ pub async fn execute_apps_command(
             Ok(serde_json::to_value(&result)?)
         }
         AppsAction::Delete(delete) => {
-            crate::ops::apps::delete(&client, &project_id, &delete.app_id).await?;
+            crate::ops::apps::delete(&client, &project_id, &delete.app_id)
+                .await
+                .map_err(CommandError::from)?;
             Ok(serde_json::json!({}))
         }
         AppsAction::RegenerateSecret(regen) => {
-            let secret =
-                crate::ops::apps::regenerate_secret(&client, &project_id, &regen.app_id).await?;
+            let secret = crate::ops::apps::regenerate_secret(&client, &project_id, &regen.app_id)
+                .await
+                .map_err(CommandError::from)?;
             let mut result = serde_json::to_value(&secret)?;
             if let Some(client_id) = &regen.client_id {
                 result["clientId"] = Value::String(client_id.clone());
@@ -84,30 +100,47 @@ pub async fn execute_apps_command(
             Ok(result)
         }
         AppsAction::QuickSetup(quick) => {
-            let templates = config.templates()?;
+            let templates = config
+                .templates()
+                .map_err(|error| CommandError::config(error.to_string()))?;
             let names = if quick.names.is_empty() {
                 templates.apps.keys().cloned().collect::<Vec<_>>()
             } else {
                 quick.names.clone()
             };
 
+            // Surface a missing template as `not_found` (with the lookup in
+            // `details`) instead of the ops layer's untyped error.
+            for name in &names {
+                if !templates.apps.contains_key(name) {
+                    return Err(template_not_found(name));
+                }
+            }
+
             let created =
                 crate::ops::apps::quick_setup(&client, &project_id, &templates.apps, &names)
-                    .await?;
+                    .await
+                    .map_err(CommandError::from)?;
             Ok(serde_json::to_value(&created)?)
         }
     }
 }
 
-fn remember_device_client_id(config: &AppConfig, result: &CreateAppResult) -> Result<()> {
-    let updated = config_with_device_client_id(config, result)?;
+fn remember_device_client_id(
+    config: &AppConfig,
+    result: &CreateAppResult,
+) -> Result<(), CommandError> {
+    let updated = config_with_device_client_id(config, result).map_err(CommandError::from)?;
     updated
         .save_to_canonical_path()
-        .context("failed to save native app clientId as device_client_id")?;
+        .map_err(|error| CommandError::config(error.to_string()))?;
     Ok(())
 }
 
-fn config_with_device_client_id(config: &AppConfig, result: &CreateAppResult) -> Result<AppConfig> {
+fn config_with_device_client_id(
+    config: &AppConfig,
+    result: &CreateAppResult,
+) -> anyhow::Result<AppConfig> {
     let Some(client_id) = device_client_id_from_create_response(result) else {
         anyhow::bail!("device-code native app response did not include clientId");
     };
@@ -169,5 +202,17 @@ mod tests {
             Some("https://zitadel.example.com")
         );
         assert_eq!(updated.device_client_id.as_deref(), Some("new-client"));
+    }
+
+    #[test]
+    fn template_not_found_is_typed_not_found_with_lookup() {
+        let error = template_not_found("grafana");
+
+        assert_eq!(error.kind, ErrorKind::NotFound);
+        assert_eq!(error.message, "template grafana not found");
+        assert_eq!(
+            error.details,
+            Some(json!({ "lookup": { "field": "template", "value": "grafana" } }))
+        );
     }
 }
