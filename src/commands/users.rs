@@ -13,6 +13,26 @@ pub async fn execute_users_command(
     args: &Cli,
     config: &AppConfig,
 ) -> Result<Value, CommandError> {
+    // Cheap input validation before credential resolution so
+    // `error.kind` is deterministic regardless of credentials or API
+    // reachability.
+    if let UsersAction::CreateAdmin(create) = &command.action {
+        if create.password.is_none() {
+            return Err(CommandError::usage(
+                "--password is required for users create-admin in headless mode",
+            ));
+        }
+    }
+    let templates = if matches!(command.action, UsersAction::QuickSetup) {
+        Some(
+            config
+                .templates()
+                .map_err(|error| CommandError::config(error.to_string()))?,
+        )
+    } else {
+        None
+    };
+
     let client = authenticated_client(args, config).await?;
     match &command.action {
         UsersAction::List => Ok(serde_json::to_value(
@@ -32,6 +52,7 @@ pub async fn execute_users_command(
             .map_err(CommandError::from)?,
         )?),
         UsersAction::CreateAdmin(create) => {
+            // Validated above; re-check defensively to stay panic-free.
             let password = create.password.clone().ok_or_else(|| {
                 CommandError::usage(
                     "--password is required for users create-admin in headless mode",
@@ -57,9 +78,7 @@ pub async fn execute_users_command(
                 .map_err(CommandError::from)?,
         )?),
         UsersAction::QuickSetup => {
-            let templates = config
-                .templates()
-                .map_err(|error| CommandError::config(error.to_string()))?;
+            let templates = templates.expect("templates loaded for users quick-setup");
             let created = crate::ops::users::quick_setup(&client, templates.users)
                 .await
                 .map_err(CommandError::from)?;

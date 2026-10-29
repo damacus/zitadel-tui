@@ -13,6 +13,17 @@ pub async fn execute_idps_command(
     args: &Cli,
     config: &AppConfig,
 ) -> Result<Value, CommandError> {
+    // Cheap input validation before credential resolution so
+    // `error.kind` is deterministic regardless of credentials or API
+    // reachability.
+    if let IdpsAction::ConfigureGoogle(google) = &command.action {
+        if google.client_secret.is_none() {
+            return Err(CommandError::usage(
+                "--client-secret is required for idps configure-google in headless mode",
+            ));
+        }
+    }
+
     let client = authenticated_client(args, config).await?;
     match &command.action {
         IdpsAction::List => Ok(serde_json::to_value(
@@ -21,6 +32,7 @@ pub async fn execute_idps_command(
                 .map_err(CommandError::from)?,
         )?),
         IdpsAction::ConfigureGoogle(google) => {
+            // Validated above; re-check defensively to stay panic-free.
             let secret = google.client_secret.clone().ok_or_else(|| {
                 CommandError::usage(
                     "--client-secret is required for idps configure-google in headless mode",
