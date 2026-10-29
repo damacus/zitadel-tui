@@ -1,9 +1,10 @@
+//! Typed projections of Zitadel API payloads. Every model keeps the original
+//! response body in `raw` (attached by the client after decode, never
+//! deserialized or serialized as part of the projection).
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Typed projections of Zitadel API payloads. Every model keeps the original
-/// response body in `raw` (attached by the client after decode, never
-/// deserialized or serialized as part of the projection).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
