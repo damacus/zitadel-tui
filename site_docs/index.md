@@ -56,10 +56,14 @@ zitadel-tui apps list
 
 Important behavior:
 
-- subcommands run one-shot without `--once`
-- `--json` switches headless output to JSON envelopes
+- every subcommand prints exactly one JSON envelope on stdout:
+  `{"command":…,"ok":true,"result":…}` on success,
+  `{"command":…,"ok":false,"error":{"kind","message","details"?}}` on failure
+- exit codes are meaningful: `0` success, `1` command error, `2` argument
+  parse failure
 - `--project-id` is optional in headless mode because the CLI can resolve the
   default project when omitted
+- no command prompts; pass all inputs via flags, env vars, or config
 
 Global options:
 
@@ -68,16 +72,17 @@ Global options:
 - `--token`: use `ZITADEL_TOKEN`
 - `--service-account-file`: use `ZITADEL_SERVICE_ACCOUNT_FILE`
 - `--config`: load a non-default TOML file
-- `--json`: print machine-readable output
-- `--once`: deprecated compatibility flag for one-shot subcommand execution
+- `--full`: raw API payloads instead of summary projections on `list`/`get`
 
 Subcommands:
 
-- `apps`: `list`, `create`, `create-native`, `delete`, `regenerate-secret`, `quick-setup`
-- `users`: `list`, `create`, `create-admin`, `grant-iam-owner`, `quick-setup`
-- `idps`: `list`, `configure-google`
+- `apps`: `list`, `get`, `create`, `create-native`, `delete`, `regenerate-secret`, `quick-setup`
+- `users`: `list`, `get`, `create`, `create-admin`, `grant-iam-owner`, `quick-setup`
+- `idps`: `list`, `get`, `configure-google`
+- `projects`: `list`
 - `auth`: `login`, `logout`, `status`
 - `config`: `show`
+- `agent`: print the machine-readable agent guide (`docs/AGENT.md`)
 
 See the top-level [README](../README.md) for the complete option-by-option CLI
 reference.

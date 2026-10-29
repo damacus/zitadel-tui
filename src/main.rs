@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 use zitadel_tui::{
-    cli::{command_path, Cli},
-    commands::execute_command,
+    cli::{command_path, Cli, Command},
+    commands::{self, execute_command},
     conductor::TuiConductor,
     config::AppConfig,
     error::{CommandError, ErrorKind},
@@ -16,6 +16,12 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     if let Some(command) = &args.command {
+        // `agent` prints the guide verbatim — a doc surface, not an API
+        // command — so it bypasses the JSON envelope on purpose.
+        if matches!(command, Command::Agent) {
+            commands::print_agent_guide();
+            return Ok(());
+        }
         let path = command_path(command);
         // Config load failures are still reported in the envelope so agents
         // get a single parse target on stdout.

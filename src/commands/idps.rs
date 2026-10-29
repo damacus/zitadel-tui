@@ -6,7 +6,7 @@ use crate::{
     error::CommandError,
 };
 
-use super::shared::{authenticated_client, list_result};
+use super::shared::{authenticated_client, get_result, list_result};
 
 pub async fn execute_idps_command(
     command: &IdpsCommand,
@@ -26,11 +26,19 @@ pub async fn execute_idps_command(
 
     let client = authenticated_client(args, config).await?;
     match &command.action {
-        IdpsAction::List => {
-            let idps = crate::ops::idps::list(&client)
+        IdpsAction::List(list) => {
+            let idps = crate::ops::idps::list(&client, list.limit)
                 .await
                 .map_err(CommandError::from)?;
             list_result(&idps, args.full)
+        }
+        IdpsAction::Get(get) => {
+            let selector = get.selector();
+            let idp = crate::ops::resolve_idp(&client, &selector)
+                .await
+                .map_err(CommandError::from)?
+                .into_command_result(&selector.describe(), selector.lookup())?;
+            get_result(&idp, args.full)
         }
         IdpsAction::ConfigureGoogle(google) => {
             // Validated above; re-check defensively to stay panic-free.

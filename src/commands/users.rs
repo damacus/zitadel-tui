@@ -1,12 +1,13 @@
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::{
-    cli::{Cli, UsersAction, UsersCommand},
+    api::client::ZitadelClient,
+    cli::{Cli, UserSelectorArgs, UsersAction, UsersCommand},
     config::AppConfig,
-    error::CommandError,
+    error::{CommandError, ErrorKind},
 };
 
-use super::shared::{authenticated_client, list_result};
+use super::shared::{authenticated_client, get_result, list_result};
 
 pub async fn execute_users_command(
     command: &UsersCommand,
@@ -35,11 +36,19 @@ pub async fn execute_users_command(
 
     let client = authenticated_client(args, config).await?;
     match &command.action {
-        UsersAction::List => {
-            let users = crate::ops::users::list(&client, 100)
+        UsersAction::List(list) => {
+            let users = crate::ops::users::list(&client, list.limit)
                 .await
                 .map_err(CommandError::from)?;
             list_result(&users, args.full)
+        }
+        UsersAction::Get(get) => {
+            let selector = get.selector();
+            let user = crate::ops::resolve_user(&client, &selector)
+                .await
+                .map_err(CommandError::from)?
+                .into_command_result(&selector.describe(), selector.lookup())?;
+            get_result(&user, args.full)
         }
         UsersAction::Create(create) => Ok(serde_json::to_value(
             crate::ops::users::create_human(
@@ -73,11 +82,14 @@ pub async fn execute_users_command(
                 .map_err(CommandError::from)?,
             )?)
         }
-        UsersAction::GrantIamOwner(grant) => Ok(serde_json::to_value(
-            crate::ops::users::grant_iam_owner(&client, &grant.user_id)
-                .await
-                .map_err(CommandError::from)?,
-        )?),
+        UsersAction::GrantIamOwner(grant) => {
+            let user_id = resolved_user_id(&client, grant).await?;
+            Ok(serde_json::to_value(
+                crate::ops::users::grant_iam_owner(&client, &user_id)
+                    .await
+                    .map_err(CommandError::from)?,
+            )?)
+        }
         UsersAction::QuickSetup => {
             let templates = templates.expect("templates loaded for users quick-setup");
             let created = crate::ops::users::quick_setup(&client, templates.users)
@@ -87,4 +99,25 @@ pub async fn execute_users_command(
             Ok(serde_json::to_value(&results)?)
         }
     }
+}
+
+/// Resolves a selector group to a user id: zero matches → `not_found`,
+/// multiple → `ambiguous`, a match without an id → `api` (malformed API
+/// payload). Used by `grant-iam-owner` which mutates by id.
+async fn resolved_user_id(
+    client: &ZitadelClient,
+    selector_args: &UserSelectorArgs,
+) -> Result<String, CommandError> {
+    let selector = selector_args.selector();
+    let user = crate::ops::resolve_user(client, &selector)
+        .await
+        .map_err(CommandError::from)?
+        .into_command_result(&selector.describe(), selector.lookup())?;
+    user.id.clone().ok_or_else(|| {
+        CommandError::with_details(
+            ErrorKind::Api,
+            format!("{} resolved without an id", selector.describe()),
+            json!({ "lookup": selector.lookup() }),
+        )
+    })
 }

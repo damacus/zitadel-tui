@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Exact-match selector for application lookup.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppSelector {
     Id(String),
     Name(String),
@@ -26,7 +26,7 @@ pub enum AppSelector {
 
 /// Exact-match selector for user lookup. `Username` matches either `user_name`
 /// or `preferred_login_name`; `Email` matches the human email address.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UserSelector {
     Id(String),
     Username(String),
@@ -34,7 +34,7 @@ pub enum UserSelector {
 }
 
 /// Exact-match selector for identity provider lookup.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdpSelector {
     Id(String),
     Name(String),
@@ -159,7 +159,7 @@ pub async fn resolve_app(
     project_id: &str,
     selector: &AppSelector,
 ) -> Result<ResolveOutcome<App>> {
-    let apps = client.list_apps(project_id).await?;
+    let apps = client.list_apps(project_id, SELECTOR_LIST_LIMIT).await?;
     let matches: Vec<App> = apps
         .into_iter()
         .filter(|app| match selector {
@@ -179,7 +179,7 @@ pub async fn resolve_user(
     client: &ZitadelClient,
     selector: &UserSelector,
 ) -> Result<ResolveOutcome<User>> {
-    let users = client.list_users(USER_LIST_LIMIT).await?;
+    let users = client.list_users(SELECTOR_LIST_LIMIT).await?;
     let matches: Vec<User> = users
         .into_iter()
         .filter(|user| match selector {
@@ -208,7 +208,7 @@ pub async fn resolve_idp(
     client: &ZitadelClient,
     selector: &IdpSelector,
 ) -> Result<ResolveOutcome<Idp>> {
-    let idps = client.list_idps().await?;
+    let idps = client.list_idps(SELECTOR_LIST_LIMIT).await?;
     let matches: Vec<Idp> = idps
         .into_iter()
         .filter(|idp| match selector {
@@ -222,7 +222,9 @@ pub async fn resolve_idp(
     ))
 }
 
-const USER_LIST_LIMIT: u64 = 100;
+/// Page size for the search request backing selector resolution. The
+/// selector match itself is an exact client-side filter over this page.
+const SELECTOR_LIST_LIMIT: u64 = 100;
 
 fn into_outcome<T>(mut matches: Vec<T>, describe: impl Fn(&T) -> Value) -> ResolveOutcome<T> {
     match matches.len() {

@@ -12,9 +12,9 @@ use crate::{
 
 use super::{resolve_app, AppSelector};
 
-/// Lists all apps in a project.
-pub async fn list(client: &ZitadelClient, project_id: &str) -> Result<Vec<App>> {
-    client.list_apps(project_id).await
+/// Lists apps in a project, up to `limit`.
+pub async fn list(client: &ZitadelClient, project_id: &str, limit: u64) -> Result<Vec<App>> {
+    client.list_apps(project_id, limit).await
 }
 
 /// Looks up a single app by selector, erroring on zero or multiple matches.
