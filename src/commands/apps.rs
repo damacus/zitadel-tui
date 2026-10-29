@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 
 use crate::{
+    api::models::CreateAppResult,
     cli::{AppsAction, AppsCommand, Cli},
     config::AppConfig,
 };
@@ -45,9 +46,11 @@ pub async fn execute_apps_command(
                     create.public,
                 )
             };
-            client
-                .create_oidc_app(&project_id, &name, redirect_uris, public)
-                .await
+            Ok(serde_json::to_value(
+                client
+                    .create_oidc_app(&project_id, &name, redirect_uris, public)
+                    .await?,
+            )?)
         }
         AppsAction::CreateNative(native) => {
             let result = client
@@ -58,11 +61,15 @@ pub async fn execute_apps_command(
                 remember_device_client_id(config, &result)?;
             }
 
-            Ok(result)
+            Ok(serde_json::to_value(&result)?)
         }
-        AppsAction::Delete(delete) => client.delete_app(&project_id, &delete.app_id).await,
+        AppsAction::Delete(delete) => {
+            client.delete_app(&project_id, &delete.app_id).await?;
+            Ok(serde_json::json!({}))
+        }
         AppsAction::RegenerateSecret(regen) => {
-            let mut result = client.regenerate_secret(&project_id, &regen.app_id).await?;
+            let secret = client.regenerate_secret(&project_id, &regen.app_id).await?;
+            let mut result = serde_json::to_value(&secret)?;
             if let Some(client_id) = &regen.client_id {
                 result["clientId"] = Value::String(client_id.clone());
             }
@@ -93,12 +100,12 @@ pub async fn execute_apps_command(
                         .await?,
                 );
             }
-            Ok(Value::Array(created))
+            Ok(serde_json::to_value(&created)?)
         }
     }
 }
 
-fn remember_device_client_id(config: &AppConfig, result: &Value) -> Result<()> {
+fn remember_device_client_id(config: &AppConfig, result: &CreateAppResult) -> Result<()> {
     let updated = config_with_device_client_id(config, result)?;
     updated
         .save_to_canonical_path()
@@ -106,7 +113,7 @@ fn remember_device_client_id(config: &AppConfig, result: &Value) -> Result<()> {
     Ok(())
 }
 
-fn config_with_device_client_id(config: &AppConfig, result: &Value) -> Result<AppConfig> {
+fn config_with_device_client_id(config: &AppConfig, result: &CreateAppResult) -> Result<AppConfig> {
     let Some(client_id) = device_client_id_from_create_response(result) else {
         anyhow::bail!("device-code native app response did not include clientId");
     };
@@ -116,10 +123,10 @@ fn config_with_device_client_id(config: &AppConfig, result: &Value) -> Result<Ap
     Ok(updated)
 }
 
-fn device_client_id_from_create_response(result: &Value) -> Option<&str> {
+fn device_client_id_from_create_response(result: &CreateAppResult) -> Option<&str> {
     result
-        .get("clientId")
-        .and_then(Value::as_str)
+        .client_id
+        .as_deref()
         .map(str::trim)
         .filter(|client_id| !client_id.is_empty())
 }
@@ -128,12 +135,16 @@ fn device_client_id_from_create_response(result: &Value) -> Option<&str> {
 mod tests {
     use super::*;
 
+    fn create_app_result(value: serde_json::Value) -> CreateAppResult {
+        serde_json::from_value(value).expect("fixture decodes into CreateAppResult")
+    }
+
     #[test]
     fn extracts_device_client_id_from_create_native_response() {
-        let result = serde_json::json!({
+        let result = create_app_result(serde_json::json!({
             "appId": "app-1",
             "clientId": " client-1 "
-        });
+        }));
 
         assert_eq!(
             device_client_id_from_create_response(&result),
@@ -143,7 +154,7 @@ mod tests {
 
     #[test]
     fn rejects_missing_device_client_id_from_create_native_response() {
-        let result = serde_json::json!({ "appId": "app-1" });
+        let result = create_app_result(serde_json::json!({ "appId": "app-1" }));
 
         assert_eq!(device_client_id_from_create_response(&result), None);
     }
@@ -155,7 +166,7 @@ mod tests {
             device_client_id: Some("old-client".to_string()),
             ..AppConfig::default()
         };
-        let result = serde_json::json!({ "clientId": "new-client" });
+        let result = create_app_result(serde_json::json!({ "clientId": "new-client" }));
 
         let updated = config_with_device_client_id(&config, &result).unwrap();
 

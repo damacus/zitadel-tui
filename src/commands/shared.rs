@@ -52,9 +52,7 @@ pub async fn resolved_project_id(
     client
         .get_default_project()
         .await?
-        .get("id")
-        .and_then(|value| value.as_str())
-        .map(ToOwned::to_owned)
+        .id
         .context("failed to determine default project id")
 }
 

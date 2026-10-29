@@ -20,9 +20,11 @@ pub async fn execute_idps_command(
             let secret = google.client_secret.clone().context(
                 "--client-secret is required for idps configure-google in headless mode",
             )?;
-            client
-                .add_google_idp(&google.client_id, &secret, &google.name)
-                .await
+            Ok(serde_json::to_value(
+                client
+                    .add_google_idp(&google.client_id, &secret, &google.name)
+                    .await?,
+            )?)
         }
     }
 }

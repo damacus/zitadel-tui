@@ -16,7 +16,7 @@ pub async fn execute_users_command(
     let client = authenticated_client(args, config).await?;
     match &command.action {
         UsersAction::List => Ok(serde_json::to_value(client.list_users(100).await?)?),
-        UsersAction::Create(create) => {
+        UsersAction::Create(create) => Ok(serde_json::to_value(
             client
                 .create_human_user(
                     &create.email,
@@ -24,25 +24,29 @@ pub async fn execute_users_command(
                     &create.last_name,
                     create.username.as_deref(),
                 )
-                .await
-        }
+                .await?,
+        )?),
         UsersAction::CreateAdmin(create) => {
             let password = create
                 .password
                 .clone()
                 .context("--password is required for users create-admin in headless mode")?;
-            client
-                .import_human_user(
-                    &create.username,
-                    &create.first_name,
-                    &create.last_name,
-                    &create.email,
-                    &password,
-                    true,
-                )
-                .await
+            Ok(serde_json::to_value(
+                client
+                    .import_human_user(
+                        &create.username,
+                        &create.first_name,
+                        &create.last_name,
+                        &create.email,
+                        &password,
+                        true,
+                    )
+                    .await?,
+            )?)
         }
-        UsersAction::GrantIamOwner(grant) => client.grant_iam_owner(&grant.user_id).await,
+        UsersAction::GrantIamOwner(grant) => Ok(serde_json::to_value(
+            client.grant_iam_owner(&grant.user_id).await?,
+        )?),
         UsersAction::QuickSetup => {
             let templates = config.templates()?;
             let mut join_set = tokio::task::JoinSet::new();
@@ -54,8 +58,7 @@ pub async fn execute_users_command(
                         .create_human_user(&user.email, &user.first_name, &user.last_name, None)
                         .await?;
                     if user.admin {
-                        if let Some(user_id) = result.get("userId").and_then(|value| value.as_str())
-                        {
+                        if let Some(user_id) = result.user_id.as_deref() {
                             client.grant_iam_owner(user_id).await?;
                         }
                     }
@@ -69,8 +72,8 @@ pub async fn execute_users_command(
             }
             results.sort_by_key(|(idx, _)| *idx);
 
-            let created: Vec<Value> = results.into_iter().map(|(_, val)| val).collect();
-            Ok(Value::Array(created))
+            let created: Vec<_> = results.into_iter().map(|(_, val)| val).collect();
+            Ok(serde_json::to_value(&created)?)
         }
     }
 }
