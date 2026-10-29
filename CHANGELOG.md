@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0](https://github.com/damacus/zitadel-tui/compare/v0.1.8...v0.2.0) (2026-10-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* apps delete and users grant-iam-owner now resolve the target through a required selector group before mutating; unknown or duplicate matches fail with not_found/ambiguous instead of reaching the mutation endpoint.
+* --json and --once flags removed (unknown arg, exit 2). Headless commands always print the JSON envelope to stdout; there is no human output mode (the TUI is the human interface). Command failures now exit 1 instead of 0. auth login no longer prompts for a client ID on stdin; pass --client-id or set device_client_id in config.
+
+### Features
+
+* JSON output contract + typed errors + summary projections (stack 3/4) ([#163](https://github.com/damacus/zitadel-tui/issues/163)) ([12914e8](https://github.com/damacus/zitadel-tui/commit/12914e8450b21399dbf3b865073d1204c8457972))
+* selectors, get/projects commands, --limit, env secrets, agent guide (stack 4/4) ([#164](https://github.com/damacus/zitadel-tui/issues/164)) ([3d1df1c](https://github.com/damacus/zitadel-tui/commit/3d1df1cba39b54f981cf0d61e0577be4d1c3fce8))
+
+
+### Bug Fixes
+
+* **deps:** update rust crate jsonwebtoken to v11 ([#136](https://github.com/damacus/zitadel-tui/issues/136)) ([89e9795](https://github.com/damacus/zitadel-tui/commit/89e9795972adf2d2bb95fc566cdd0332f815cf96))
+
 ## [0.1.8](https://github.com/damacus/zitadel-tui/compare/v0.1.7...v0.1.8) (2026-07-13)
 
 
