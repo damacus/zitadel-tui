@@ -1,23 +1,10 @@
-mod auth;
-mod cli;
-mod client;
-mod commands;
-mod conductor;
-mod config;
-mod oidc;
-mod output;
-#[cfg(test)]
-mod test_support;
-mod token_cache;
-mod tui;
-mod tui_runtime;
-
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use crate::{
+use zitadel_tui::{
     cli::{command_name, Cli},
     commands::execute_command,
+    conductor::TuiConductor,
     config::AppConfig,
     output::{print_human, CommandEnvelope},
     tui_runtime::run_tui,
@@ -63,7 +50,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    let conductor = conductor::TuiConductor::bootstrap(args.clone(), config).await;
+    let conductor = TuiConductor::bootstrap(args.clone(), config).await;
     run_tui(conductor).await
 }
 
