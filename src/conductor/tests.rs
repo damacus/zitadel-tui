@@ -12,8 +12,8 @@ use super::{
     TuiConductor,
 };
 use crate::{
+    api::client::ZitadelClient,
     cli::Cli,
-    client::ZitadelClient,
     config::{AppConfig, AppTemplate, TemplatesFile, UserTemplate},
     tui::{CanvasMode, FormState, PendingAction, Record, ResourceKind},
 };

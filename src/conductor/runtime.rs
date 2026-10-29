@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use reqwest::Client as HttpClient;
 
-use crate::{auth::resolve_access_token, client::ZitadelClient, tui::TuiBootstrap};
+use crate::{api::client::ZitadelClient, auth::resolve_access_token, tui::TuiBootstrap};
 
 use super::{
     records::{map_app_record, map_idp_record, map_user_record},

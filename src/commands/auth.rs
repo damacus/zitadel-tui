@@ -2,9 +2,9 @@ use anyhow::Result;
 use serde_json::Value;
 
 use crate::{
+    api::client::ZitadelClient,
     auth::{resolve_access_token, validate_login_session_token},
     cli::{AuthAction, AuthCommand, Cli},
-    client::ZitadelClient,
     config::AppConfig,
     oidc, token_cache,
 };

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 
-use crate::{auth::resolve_access_token, cli::Cli, client::ZitadelClient, config::AppConfig};
+use crate::{api::client::ZitadelClient, auth::resolve_access_token, cli::Cli, config::AppConfig};
 
 pub async fn authenticated_client(args: &Cli, config: &AppConfig) -> Result<ZitadelClient> {
     let host = resolved_host(args, config)?;

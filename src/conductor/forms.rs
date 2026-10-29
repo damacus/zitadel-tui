@@ -380,7 +380,7 @@ pub(crate) fn checkbox_enabled(value: &str) -> bool {
 }
 
 pub(crate) async fn create_quick_user(
-    client: &crate::client::ZitadelClient,
+    client: &crate::api::client::ZitadelClient,
     user: UserTemplate,
 ) -> anyhow::Result<Vec<String>> {
     let mut lines = Vec::new();
