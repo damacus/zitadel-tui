@@ -389,7 +389,7 @@ pub(crate) async fn create_quick_user(
         .await?;
     lines.push(format!("Created {}", user.email));
     if user.admin {
-        if let Some(user_id) = result.get("userId").and_then(|value| value.as_str()) {
+        if let Some(user_id) = result.user_id.as_deref() {
             client.grant_iam_owner(user_id).await?;
             lines.push(format!("Granted IAM_OWNER to {}", user.email));
         }

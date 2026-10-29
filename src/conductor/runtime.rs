@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
 use reqwest::Client as HttpClient;
 
-use crate::{api::client::ZitadelClient, auth::resolve_access_token, tui::TuiBootstrap};
-
-use super::{
-    records::{map_app_record, map_idp_record, map_user_record},
-    TuiConductor,
+use crate::{
+    api::client::ZitadelClient,
+    auth::resolve_access_token,
+    tui::{Record, TuiBootstrap},
 };
+
+use super::TuiConductor;
 
 impl TuiConductor {
     pub async fn bootstrap(cli: crate::cli::Cli, config: crate::config::AppConfig) -> Self {
@@ -128,13 +129,13 @@ impl TuiConductor {
             client.list_idps()
         );
         self.app_records = apps
-            .map(|apps| apps.into_iter().map(map_app_record).collect())
+            .map(|apps| apps.iter().map(Record::from).collect())
             .unwrap_or_default();
         self.user_records = users
-            .map(|users| users.into_iter().map(map_user_record).collect())
+            .map(|users| users.iter().map(Record::from).collect())
             .unwrap_or_default();
         self.idp_records = idps
-            .map(|idps| idps.into_iter().map(map_idp_record).collect())
+            .map(|idps| idps.iter().map(Record::from).collect())
             .unwrap_or_default();
         self.client = Some(client);
     }
@@ -152,8 +153,6 @@ pub(crate) async fn resolve_project_id(
     client
         .get_default_project()
         .await?
-        .get("id")
-        .and_then(|value| value.as_str())
-        .map(ToOwned::to_owned)
+        .id
         .context("failed to determine default project id")
 }

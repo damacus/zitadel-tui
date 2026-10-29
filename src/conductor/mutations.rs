@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use reqwest::Client as HttpClient;
-use serde_json::Value;
 
 use crate::{
     auth::resolve_access_token,
@@ -70,10 +69,7 @@ impl TuiConductor {
                                     format!("Client ID: {client_id}"),
                                     format!(
                                         "Client Secret: {}",
-                                        value
-                                            .get("clientSecret")
-                                            .and_then(|item| item.as_str())
-                                            .unwrap_or("missing")
+                                        value.client_secret.as_deref().unwrap_or("missing")
                                     ),
                                     "This secret is only shown once.".to_string(),
                                 ],
@@ -113,9 +109,9 @@ impl TuiConductor {
         }
     }
 
-    async fn finish_simple_mutation(
+    async fn finish_simple_mutation<T>(
         &mut self,
-        result: Result<Value>,
+        result: Result<T>,
         title: &str,
         lines: Vec<String>,
     ) -> CanvasMode {
@@ -180,12 +176,9 @@ impl TuiConductor {
                 self.refresh_runtime().await;
                 let mut lines = vec![format!(
                     "Client ID: {}",
-                    value
-                        .get("clientId")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("missing")
+                    value.client_id.as_deref().unwrap_or("missing")
                 )];
-                if let Some(secret) = value.get("clientSecret").and_then(|v| v.as_str()) {
+                if let Some(secret) = value.client_secret.as_deref() {
                     lines.push(format!("Client Secret: {secret}"));
                     lines.push("This secret is only shown once.".to_string());
                 }
@@ -318,10 +311,7 @@ impl TuiConductor {
                     title: "User created".to_string(),
                     lines: vec![format!(
                         "User ID: {}",
-                        value
-                            .get("userId")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("missing")
+                        value.user_id.as_deref().unwrap_or("missing")
                     )],
                 })
             }
@@ -457,10 +447,7 @@ impl TuiConductor {
                     title: "Google IDP configured".to_string(),
                     lines: vec![format!(
                         "IDP ID: {}",
-                        value
-                            .get("id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("missing")
+                        value.id.as_deref().unwrap_or("missing")
                     )],
                 })
             }
