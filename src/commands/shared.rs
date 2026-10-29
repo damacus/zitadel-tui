@@ -45,6 +45,16 @@ pub fn list_result<T: Summarize>(items: &[T], full: bool) -> Result<Value, Comma
     )?)
 }
 
+/// Serializes a single resolved item for `get` commands: the compact
+/// summary projection by default, the retained raw API payload under
+/// `--full` — the same switch [`list_result`] uses.
+pub fn get_result<T: Summarize>(item: &T, full: bool) -> Result<Value, CommandError> {
+    if full {
+        return Ok(item.raw().clone());
+    }
+    Ok(serde_json::to_value(item.summary())?)
+}
+
 pub fn resolved_host(args: &Cli, config: &AppConfig) -> Result<String, CommandError> {
     args.host
         .clone()

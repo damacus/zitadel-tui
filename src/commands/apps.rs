@@ -1,13 +1,13 @@
 use serde_json::{json, Value};
 
 use crate::{
-    api::models::CreateAppResult,
-    cli::{AppsAction, AppsCommand, Cli, CreateAppArgs},
+    api::{client::ZitadelClient, models::CreateAppResult},
+    cli::{AppSelectorArgs, AppsAction, AppsCommand, Cli, CreateAppArgs},
     config::{AppConfig, TemplatesFile},
     error::{CommandError, ErrorKind},
 };
 
-use super::shared::{authenticated_client, list_result};
+use super::shared::{authenticated_client, get_result, list_result};
 
 /// `apps create`/`quick-setup` template lookup failure — `NotFound` with
 /// the lookup echoed in `details`.
@@ -98,6 +98,14 @@ pub async fn execute_apps_command(
                 .map_err(CommandError::from)?;
             list_result(&apps, args.full)
         }
+        AppsAction::Get(get) => {
+            let selector = get.selector();
+            let app = crate::ops::resolve_app(&client, &project_id, &selector)
+                .await
+                .map_err(CommandError::from)?
+                .into_command_result(&selector.describe(), selector.lookup())?;
+            get_result(&app, args.full)
+        }
         AppsAction::Create(create) => {
             let templates = templates.expect("templates loaded for apps create");
             let (name, redirect_uris, public) = if let Some(template_name) = &create.template {
@@ -145,13 +153,15 @@ pub async fn execute_apps_command(
             Ok(serde_json::to_value(&result)?)
         }
         AppsAction::Delete(delete) => {
-            crate::ops::apps::delete(&client, &project_id, &delete.app_id)
+            let app_id = resolved_app_id(&client, &project_id, delete).await?;
+            crate::ops::apps::delete(&client, &project_id, &app_id)
                 .await
                 .map_err(CommandError::from)?;
             Ok(serde_json::json!({}))
         }
         AppsAction::RegenerateSecret(regen) => {
-            let secret = crate::ops::apps::regenerate_secret(&client, &project_id, &regen.app_id)
+            let app_id = resolved_app_id(&client, &project_id, &regen.selector).await?;
+            let secret = crate::ops::apps::regenerate_secret(&client, &project_id, &app_id)
                 .await
                 .map_err(CommandError::from)?;
             let mut result = serde_json::to_value(&secret)?;
@@ -175,6 +185,28 @@ pub async fn execute_apps_command(
             Ok(serde_json::to_value(&created)?)
         }
     }
+}
+
+/// Resolves a selector group to an app id: zero matches → `not_found`,
+/// multiple → `ambiguous`, a match without an id → `api` (malformed API
+/// payload). Used by `delete`/`regenerate-secret` which mutate by id.
+async fn resolved_app_id(
+    client: &ZitadelClient,
+    project_id: &str,
+    selector_args: &AppSelectorArgs,
+) -> Result<String, CommandError> {
+    let selector = selector_args.selector();
+    let app = crate::ops::resolve_app(client, project_id, &selector)
+        .await
+        .map_err(CommandError::from)?
+        .into_command_result(&selector.describe(), selector.lookup())?;
+    app.id.clone().ok_or_else(|| {
+        CommandError::with_details(
+            ErrorKind::Api,
+            format!("{} resolved without an id", selector.describe()),
+            json!({ "lookup": selector.lookup() }),
+        )
+    })
 }
 
 fn remember_device_client_id(

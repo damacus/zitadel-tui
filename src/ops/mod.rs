@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Exact-match selector for application lookup.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppSelector {
     Id(String),
     Name(String),
@@ -26,7 +26,7 @@ pub enum AppSelector {
 
 /// Exact-match selector for user lookup. `Username` matches either `user_name`
 /// or `preferred_login_name`; `Email` matches the human email address.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UserSelector {
     Id(String),
     Username(String),
@@ -34,7 +34,7 @@ pub enum UserSelector {
 }
 
 /// Exact-match selector for identity provider lookup.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdpSelector {
     Id(String),
     Name(String),

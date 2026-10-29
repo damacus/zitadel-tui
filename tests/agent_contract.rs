@@ -120,15 +120,19 @@ fn api_failure_prints_error_envelope_and_exits_1() {
 }
 
 #[test]
-fn apps_delete_unresolved_id_surfaces_api_kind() {
-    // `apps delete` does not resolve by name today; a missing app hits the
-    // DELETE endpoint directly, so the pinned kind is `api`.
+fn apps_delete_unknown_id_is_not_found() {
+    // `apps delete` resolves the selector first; an unmatched id is a typed
+    // `not_found` and the DELETE endpoint is never hit.
     let mut server = Server::new();
     server
-        .mock("DELETE", "/management/v1/projects/proj-1/apps/missing")
-        .with_status(404)
+        .mock("POST", "/management/v1/projects/proj-1/apps/_search")
+        .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{"message":"not found"}"#)
+        .with_body(r#"{"result":[{"id":"app-1","name":"grafana"}]}"#)
+        .create();
+    let delete = server
+        .mock("DELETE", "/management/v1/projects/proj-1/apps/missing")
+        .expect(0)
         .create();
 
     let config = empty_config();
@@ -148,11 +152,16 @@ fn apps_delete_unresolved_id_surfaces_api_kind() {
         .expect("failed to spawn zitadel-tui");
 
     let _ = fs::remove_file(&config);
+    delete.assert();
     assert_eq!(output.status.code(), Some(1));
     let envelope = stdout_json(&output);
     assert_eq!(envelope["command"], "apps.delete");
     assert_eq!(envelope["ok"], false);
-    assert_eq!(envelope["error"]["kind"], "api");
+    assert_eq!(envelope["error"]["kind"], "not_found");
+    assert_eq!(
+        envelope["error"]["details"]["lookup"],
+        json!({ "field": "app_id", "value": "missing" })
+    );
 }
 
 #[test]
@@ -189,6 +198,7 @@ fn users_create_admin_without_password_is_usage_not_auth() {
         .env_remove("ZITADEL_SERVICE_ACCOUNT_FILE")
         .env_remove("ZITADEL_PROJECT_ID")
         .env_remove("ZITADEL_TUI_TOKEN_CACHE")
+        .env_remove("ZITADEL_USER_PASSWORD")
         .args(["--host", "https://example.invalid", "--config"])
         .arg(&config)
         .args([
@@ -228,6 +238,7 @@ fn idps_configure_google_without_client_secret_is_usage_not_auth() {
         .env_remove("ZITADEL_SERVICE_ACCOUNT_FILE")
         .env_remove("ZITADEL_PROJECT_ID")
         .env_remove("ZITADEL_TUI_TOKEN_CACHE")
+        .env_remove("ZITADEL_GOOGLE_CLIENT_SECRET")
         .args(["--host", "https://example.invalid", "--config"])
         .arg(&config)
         .args(["idps", "configure-google", "--client-id", "google-cid"])
@@ -657,6 +668,376 @@ fn apps_list_limit_reaches_search_body() {
 fn apps_list_limit_below_range_exits_2() {
     let status = bin()
         .args(["apps", "list", "--limit", "0"])
+        .status()
+        .expect("failed to spawn zitadel-tui");
+
+    assert_eq!(status.code(), Some(2));
+}
+
+#[test]
+fn apps_get_by_name_returns_summary_projection() {
+    let mut server = Server::new();
+    mock_apps_search(&mut server);
+
+    let config = empty_config();
+    let output = bin()
+        .args([
+            "--host",
+            &server.url(),
+            "--token",
+            "test",
+            "--project-id",
+            "proj-1",
+            "--config",
+        ])
+        .arg(&config)
+        .args(["apps", "get", "--name", "grafana"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["command"], "apps.get");
+    assert_eq!(envelope["ok"], true);
+    // Single resolved item: summary keys only, no oidcConfig/raw extras.
+    let result = &envelope["result"];
+    let keys: std::collections::BTreeSet<&str> = result
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        ["client_id", "id", "kind", "name", "redirect_uris", "state"]
+            .into_iter()
+            .collect()
+    );
+    assert_eq!(result["id"], "app-1");
+    assert_eq!(result["name"], "grafana");
+    assert_eq!(result["client_id"], "cid-1");
+    assert_eq!(result["kind"], "confidential");
+}
+
+#[test]
+fn apps_get_full_returns_raw_payload() {
+    let mut server = Server::new();
+    mock_apps_search(&mut server);
+
+    let config = empty_config();
+    let output = bin()
+        .args([
+            "--host",
+            &server.url(),
+            "--token",
+            "test",
+            "--project-id",
+            "proj-1",
+            "--config",
+        ])
+        .arg(&config)
+        .args(["apps", "get", "--name", "grafana", "--full"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    let raw = &serde_json::from_str::<Value>(APPS_LIST_BODY).unwrap()["result"][0];
+    assert_eq!(&envelope["result"], raw);
+    assert!(envelope["result"]["oidcConfig"].is_object());
+}
+
+#[test]
+fn apps_delete_by_name_resolves_then_deletes() {
+    let mut server = Server::new();
+    mock_apps_search(&mut server);
+    let delete = server
+        .mock("DELETE", "/management/v1/projects/proj-1/apps/app-1")
+        .with_status(204)
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .args([
+            "--host",
+            &server.url(),
+            "--token",
+            "test",
+            "--project-id",
+            "proj-1",
+            "--config",
+        ])
+        .arg(&config)
+        .args(["apps", "delete", "--name", "grafana"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    delete.assert();
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["command"], "apps.delete");
+    assert_eq!(envelope["ok"], true);
+}
+
+#[test]
+fn apps_get_unknown_name_is_not_found() {
+    let mut server = Server::new();
+    mock_apps_search(&mut server);
+
+    let config = empty_config();
+    let output = bin()
+        .args([
+            "--host",
+            &server.url(),
+            "--token",
+            "test",
+            "--project-id",
+            "proj-1",
+            "--config",
+        ])
+        .arg(&config)
+        .args(["apps", "get", "--name", "ghost"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["command"], "apps.get");
+    assert_eq!(envelope["ok"], false);
+    assert_eq!(envelope["error"]["kind"], "not_found");
+    assert_eq!(envelope["error"]["message"], "app 'ghost' not found");
+    assert_eq!(
+        envelope["error"]["details"]["lookup"],
+        json!({ "field": "name", "value": "ghost" })
+    );
+}
+
+#[test]
+fn apps_get_duplicate_name_is_ambiguous() {
+    let mut server = Server::new();
+    server
+        .mock("POST", "/management/v1/projects/proj-1/apps/_search")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{"result":[{"id":"app-1","name":"grafana"},{"id":"app-2","name":"grafana"}]}"#,
+        )
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .args([
+            "--host",
+            &server.url(),
+            "--token",
+            "test",
+            "--project-id",
+            "proj-1",
+            "--config",
+        ])
+        .arg(&config)
+        .args(["apps", "get", "--name", "grafana"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["error"]["kind"], "ambiguous");
+    assert_eq!(
+        envelope["error"]["details"]["lookup"],
+        json!({ "field": "name", "value": "grafana" })
+    );
+    assert_eq!(
+        envelope["error"]["details"]["matches"]
+            .as_array()
+            .expect("matches is an array")
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn users_get_by_email_returns_summary_projection() {
+    let mut server = Server::new();
+    mock_users_search(&mut server);
+
+    let config = empty_config();
+    let output = bin()
+        .args(["--host", &server.url(), "--token", "test", "--config"])
+        .arg(&config)
+        .args(["users", "get", "--email", "admin@example.com"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["command"], "users.get");
+    let result = &envelope["result"];
+    assert_eq!(result["id"], "user-1");
+    assert_eq!(result["username"], "admin");
+    assert_eq!(result["email"], "admin@example.com");
+    assert_eq!(result["user_type"], "human");
+    assert!(result.get("human").is_none());
+}
+
+#[test]
+fn idps_get_by_name_returns_summary_projection() {
+    let mut server = Server::new();
+    server
+        .mock("POST", "/admin/v1/idps/_search")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(IDPS_LIST_BODY)
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .args(["--host", &server.url(), "--token", "test", "--config"])
+        .arg(&config)
+        .args(["idps", "get", "--name", "Google"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["command"], "idps.get");
+    assert_eq!(envelope["result"]["id"], "idp-1");
+    assert_eq!(envelope["result"]["name"], "Google");
+    assert_eq!(envelope["result"]["type"], "IDP_TYPE_GOOGLE");
+    assert!(envelope["result"].get("creationDate").is_none());
+}
+
+#[test]
+fn users_grant_iam_owner_by_email_resolves_then_grants() {
+    let mut server = Server::new();
+    server
+        .mock("POST", "/management/v1/users/_search")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{"result":[{"id":"user-9","userName":"agent","human":{"email":{"email":"a@b.c"}}}]}"#,
+        )
+        .create();
+    let grant = server
+        .mock("POST", "/admin/v1/members")
+        .match_body(Matcher::PartialJson(json!({
+            "userId": "user-9",
+            "roles": ["IAM_OWNER"]
+        })))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"memberId":"member-1"}"#)
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .args(["--host", &server.url(), "--token", "test", "--config"])
+        .arg(&config)
+        .args(["users", "grant-iam-owner", "--email", "a@b.c"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    grant.assert();
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["command"], "users.grant-iam-owner");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["result"]["memberId"], "member-1");
+}
+
+#[test]
+fn users_grant_iam_owner_unknown_username_is_not_found() {
+    let mut server = Server::new();
+    server
+        .mock("POST", "/management/v1/users/_search")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"result":[{"id":"user-1","userName":"admin"}]}"#)
+        .create();
+    let grant = server.mock("POST", "/admin/v1/members").expect(0).create();
+
+    let config = empty_config();
+    let output = bin()
+        .args(["--host", &server.url(), "--token", "test", "--config"])
+        .arg(&config)
+        .args(["users", "grant-iam-owner", "--username", "ghost"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    grant.assert();
+    assert_eq!(output.status.code(), Some(1));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["error"]["kind"], "not_found");
+    assert_eq!(
+        envelope["error"]["details"]["lookup"],
+        json!({ "field": "username", "value": "ghost" })
+    );
+}
+
+#[test]
+fn apps_get_without_selector_exits_2() {
+    let status = bin()
+        .args(["apps", "get"])
+        .status()
+        .expect("failed to spawn zitadel-tui");
+
+    assert_eq!(status.code(), Some(2));
+}
+
+#[test]
+fn apps_get_with_two_selectors_exits_2() {
+    let status = bin()
+        .args(["apps", "get", "--app-id", "a", "--name", "b"])
+        .status()
+        .expect("failed to spawn zitadel-tui");
+
+    assert_eq!(status.code(), Some(2));
+}
+
+#[test]
+fn apps_delete_without_selector_exits_2() {
+    let status = bin()
+        .args(["apps", "delete"])
+        .status()
+        .expect("failed to spawn zitadel-tui");
+
+    assert_eq!(status.code(), Some(2));
+}
+
+#[test]
+fn apps_delete_with_two_selectors_exits_2() {
+    let status = bin()
+        .args(["apps", "delete", "--app-id", "a", "--name", "b"])
+        .status()
+        .expect("failed to spawn zitadel-tui");
+
+    assert_eq!(status.code(), Some(2));
+}
+
+#[test]
+fn apps_regenerate_secret_without_selector_exits_2() {
+    // --client-id alone must not satisfy the required selector group.
+    let status = bin()
+        .args(["apps", "regenerate-secret", "--client-id", "cid"])
+        .status()
+        .expect("failed to spawn zitadel-tui");
+
+    assert_eq!(status.code(), Some(2));
+}
+
+#[test]
+fn users_grant_iam_owner_without_selector_exits_2() {
+    let status = bin()
+        .args(["users", "grant-iam-owner"])
         .status()
         .expect("failed to spawn zitadel-tui");
 
