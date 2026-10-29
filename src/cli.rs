@@ -290,7 +290,7 @@ pub struct CreateAdminArgs {
     pub last_name: String,
     #[arg(long)]
     pub email: String,
-    #[arg(long)]
+    #[arg(long, env = "ZITADEL_USER_PASSWORD", hide_env_values = true)]
     pub password: Option<String>,
 }
 
@@ -298,7 +298,7 @@ pub struct CreateAdminArgs {
 pub struct ConfigureGoogleArgs {
     #[arg(long)]
     pub client_id: String,
-    #[arg(long)]
+    #[arg(long, env = "ZITADEL_GOOGLE_CLIENT_SECRET", hide_env_values = true)]
     pub client_secret: Option<String>,
     #[arg(long, default_value = "Google")]
     pub name: String,
@@ -927,6 +927,98 @@ mod tests {
                 action: IdpsAction::Get(args),
             })) => assert_eq!(args.selector(), IdpSelector::Name("Google".to_string())),
             _ => panic!("expected idps get command"),
+        }
+    }
+
+    #[test]
+    fn create_admin_password_reads_from_env() {
+        let _guard = crate::test_support::env_lock();
+        let original = env::var("ZITADEL_USER_PASSWORD").ok();
+        env::set_var("ZITADEL_USER_PASSWORD", "env-secret");
+
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "users",
+            "create-admin",
+            "--username",
+            "admin",
+            "--first-name",
+            "A",
+            "--last-name",
+            "B",
+            "--email",
+            "a@b.c",
+        ]);
+
+        match &original {
+            Some(value) => env::set_var("ZITADEL_USER_PASSWORD", value),
+            None => env::remove_var("ZITADEL_USER_PASSWORD"),
+        }
+        match cli.command {
+            Some(Command::Users(UsersCommand {
+                action: UsersAction::CreateAdmin(args),
+            })) => assert_eq!(args.password.as_deref(), Some("env-secret")),
+            _ => panic!("expected users create-admin command"),
+        }
+    }
+
+    #[test]
+    fn create_admin_password_flag_beats_env() {
+        let _guard = crate::test_support::env_lock();
+        let original = env::var("ZITADEL_USER_PASSWORD").ok();
+        env::set_var("ZITADEL_USER_PASSWORD", "env-secret");
+
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "users",
+            "create-admin",
+            "--username",
+            "admin",
+            "--first-name",
+            "A",
+            "--last-name",
+            "B",
+            "--email",
+            "a@b.c",
+            "--password",
+            "flag-secret",
+        ]);
+
+        match &original {
+            Some(value) => env::set_var("ZITADEL_USER_PASSWORD", value),
+            None => env::remove_var("ZITADEL_USER_PASSWORD"),
+        }
+        match cli.command {
+            Some(Command::Users(UsersCommand {
+                action: UsersAction::CreateAdmin(args),
+            })) => assert_eq!(args.password.as_deref(), Some("flag-secret")),
+            _ => panic!("expected users create-admin command"),
+        }
+    }
+
+    #[test]
+    fn google_client_secret_reads_from_env() {
+        let _guard = crate::test_support::env_lock();
+        let original = env::var("ZITADEL_GOOGLE_CLIENT_SECRET").ok();
+        env::set_var("ZITADEL_GOOGLE_CLIENT_SECRET", "env-google-secret");
+
+        let cli = Cli::parse_from([
+            "zitadel-tui",
+            "idps",
+            "configure-google",
+            "--client-id",
+            "google-cid",
+        ]);
+
+        match &original {
+            Some(value) => env::set_var("ZITADEL_GOOGLE_CLIENT_SECRET", value),
+            None => env::remove_var("ZITADEL_GOOGLE_CLIENT_SECRET"),
+        }
+        match cli.command {
+            Some(Command::Idps(IdpsCommand {
+                action: IdpsAction::ConfigureGoogle(args),
+            })) => assert_eq!(args.client_secret.as_deref(), Some("env-google-secret")),
+            _ => panic!("expected idps configure-google command"),
         }
     }
 }

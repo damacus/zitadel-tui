@@ -1043,3 +1043,77 @@ fn users_grant_iam_owner_without_selector_exits_2() {
 
     assert_eq!(status.code(), Some(2));
 }
+
+#[test]
+fn users_create_admin_reads_password_from_env() {
+    let mut server = Server::new();
+    let import = server
+        .mock("POST", "/management/v1/users/human/_import")
+        .match_body(Matcher::PartialJson(json!({
+            "userName": "admin",
+            "password": "env-secret"
+        })))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"userId":"user-1"}"#)
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .env("ZITADEL_USER_PASSWORD", "env-secret")
+        .args(["--host", &server.url(), "--token", "test", "--config"])
+        .arg(&config)
+        .args([
+            "users",
+            "create-admin",
+            "--username",
+            "admin",
+            "--first-name",
+            "A",
+            "--last-name",
+            "B",
+            "--email",
+            "admin@example.com",
+        ])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    import.assert();
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["command"], "users.create-admin");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["result"]["userId"], "user-1");
+}
+
+#[test]
+fn idps_configure_google_reads_client_secret_from_env() {
+    let mut server = Server::new();
+    let create = server
+        .mock("POST", "/admin/v1/idps/google")
+        .match_body(Matcher::PartialJson(json!({
+            "clientId": "google-cid",
+            "clientSecret": "env-google-secret"
+        })))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"id":"idp-1","name":"Google"}"#)
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .env("ZITADEL_GOOGLE_CLIENT_SECRET", "env-google-secret")
+        .args(["--host", &server.url(), "--token", "test", "--config"])
+        .arg(&config)
+        .args(["idps", "configure-google", "--client-id", "google-cid"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    create.assert();
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["command"], "idps.configure-google");
+    assert_eq!(envelope["ok"], true);
+}
