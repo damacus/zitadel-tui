@@ -8,7 +8,7 @@ use crate::config::AppConfig;
 use super::{
     service_account::exchange_service_account,
     session::{ensure_cached_session_is_usable, same_host},
-    ResolvedAuth,
+    AuthSource, ResolvedAuth,
 };
 
 pub async fn resolve_access_token(
@@ -21,7 +21,7 @@ pub async fn resolve_access_token(
     if let Some(pat) = cli_pat {
         return Ok(ResolvedAuth {
             token: pat,
-            source: "cli PAT",
+            source: AuthSource::CliPat,
         });
     }
 
@@ -29,7 +29,7 @@ pub async fn resolve_access_token(
         if !pat.trim().is_empty() {
             return Ok(ResolvedAuth {
                 token: pat,
-                source: "env PAT",
+                source: AuthSource::EnvPat,
             });
         }
     }
@@ -37,7 +37,7 @@ pub async fn resolve_access_token(
     if let Some(pat) = config.pat.clone() {
         return Ok(ResolvedAuth {
             token: pat,
-            source: "config PAT",
+            source: AuthSource::ConfigPat,
         });
     }
 
@@ -45,7 +45,7 @@ pub async fn resolve_access_token(
         let token = exchange_service_account(client, zitadel_url, path).await?;
         return Ok(ResolvedAuth {
             token,
-            source: "cli service account",
+            source: AuthSource::CliServiceAccount,
         });
     }
 
@@ -53,7 +53,7 @@ pub async fn resolve_access_token(
         let token = exchange_service_account(client, zitadel_url, PathBuf::from(path)).await?;
         return Ok(ResolvedAuth {
             token,
-            source: "env service account",
+            source: AuthSource::EnvServiceAccount,
         });
     }
 
@@ -61,7 +61,7 @@ pub async fn resolve_access_token(
         let token = exchange_service_account(client, zitadel_url, path).await?;
         return Ok(ResolvedAuth {
             token,
-            source: "config service account",
+            source: AuthSource::ConfigServiceAccount,
         });
     }
 
@@ -75,7 +75,7 @@ pub async fn resolve_access_token(
             ensure_cached_session_is_usable(&cache.access_token, &cache.client_id, &cache.host)?;
             return Ok(ResolvedAuth {
                 token: cache.access_token,
-                source: "session token",
+                source: AuthSource::SessionToken,
             });
         }
         if let Some(refresh_token) = &cache.refresh_token {
@@ -102,7 +102,7 @@ pub async fn resolve_access_token(
                 let _ = updated.save();
                 return Ok(ResolvedAuth {
                     token: tokens.access_token,
-                    source: "session token (refreshed)",
+                    source: AuthSource::RefreshedSessionToken,
                 });
             }
         }
@@ -157,7 +157,7 @@ mod tests {
         }
 
         assert_eq!(auth.token, "cli-token");
-        assert_eq!(auth.source, "cli PAT");
+        assert_eq!(auth.source, AuthSource::CliPat);
     }
 
     #[allow(clippy::await_holding_lock)]
@@ -184,7 +184,7 @@ mod tests {
         }
 
         assert_eq!(auth.token, "config-token");
-        assert_eq!(auth.source, "config PAT");
+        assert_eq!(auth.source, AuthSource::ConfigPat);
     }
 
     #[allow(clippy::await_holding_lock)]
@@ -228,7 +228,7 @@ mod tests {
         }
 
         assert_eq!(auth.token, "header.payload.signature");
-        assert_eq!(auth.source, "session token");
+        assert_eq!(auth.source, AuthSource::SessionToken);
     }
 
     #[allow(clippy::await_holding_lock)]
@@ -277,7 +277,7 @@ mod tests {
         }
 
         assert_eq!(auth.token, "header.payload.signature");
-        assert!(auth.source.contains("refreshed"));
+        assert_eq!(auth.source, AuthSource::RefreshedSessionToken);
     }
 
     #[allow(clippy::await_holding_lock)]

@@ -2,9 +2,9 @@ use anyhow::Result;
 use serde_json::Value;
 
 use crate::{
+    api::{client::ZitadelClient, models::WhoAmI},
     auth::{resolve_access_token, validate_login_session_token},
     cli::{AuthAction, AuthCommand, Cli},
-    client::ZitadelClient,
     config::AppConfig,
     oidc, token_cache,
 };
@@ -124,18 +124,18 @@ async fn session_userinfo(http: &reqwest::Client, host: &str, access_token: &str
         .map_err(|error| anyhow::anyhow!("failed to decode OIDC userinfo response: {error}"))
 }
 
-fn auth_status_api_identity(me: &Value) -> (Value, Value) {
-    let user = me.get("user").unwrap_or(&Value::Null);
-    let user_id = user
-        .get("userId")
-        .or_else(|| user.get("id"))
-        .cloned()
+fn auth_status_api_identity(me: &WhoAmI) -> (Value, Value) {
+    let user_id = me
+        .user
+        .user_id
+        .clone()
+        .map(Value::String)
         .unwrap_or(Value::Null);
-    let login_name = user
-        .get("preferredLoginName")
-        .or_else(|| user.get("userName"))
-        .or_else(|| user.get("loginName"))
-        .cloned()
+    let login_name = me
+        .user
+        .preferred_login_name
+        .clone()
+        .map(Value::String)
         .unwrap_or(Value::Null);
 
     (user_id, login_name)

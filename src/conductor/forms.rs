@@ -1,6 +1,5 @@
-use crate::{
-    config::UserTemplate,
-    tui::{CanvasMode, ConfirmState, FormField, FormState, PendingAction, Record, ResourceKind},
+use crate::tui::{
+    CanvasMode, ConfirmState, FormField, FormState, PendingAction, Record, ResourceKind,
 };
 
 use super::{support::error_mode, TuiConductor};
@@ -377,22 +376,4 @@ pub(crate) fn split_csv(input: &str) -> Vec<String> {
 
 pub(crate) fn checkbox_enabled(value: &str) -> bool {
     matches!(value, "true" | "1" | "yes" | "on")
-}
-
-pub(crate) async fn create_quick_user(
-    client: &crate::client::ZitadelClient,
-    user: UserTemplate,
-) -> anyhow::Result<Vec<String>> {
-    let mut lines = Vec::new();
-    let result = client
-        .create_human_user(&user.email, &user.first_name, &user.last_name, None)
-        .await?;
-    lines.push(format!("Created {}", user.email));
-    if user.admin {
-        if let Some(user_id) = result.get("userId").and_then(|value| value.as_str()) {
-            client.grant_iam_owner(user_id).await?;
-            lines.push(format!("Granted IAM_OWNER to {}", user.email));
-        }
-    }
-    Ok(lines)
 }

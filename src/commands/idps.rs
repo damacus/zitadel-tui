@@ -15,14 +15,22 @@ pub async fn execute_idps_command(
 ) -> Result<Value> {
     let client = authenticated_client(args, config).await?;
     match &command.action {
-        IdpsAction::List => Ok(serde_json::to_value(client.list_idps().await?)?),
+        IdpsAction::List => Ok(serde_json::to_value(
+            crate::ops::idps::list(&client).await?,
+        )?),
         IdpsAction::ConfigureGoogle(google) => {
             let secret = google.client_secret.clone().context(
                 "--client-secret is required for idps configure-google in headless mode",
             )?;
-            client
-                .add_google_idp(&google.client_id, &secret, &google.name)
-                .await
+            Ok(serde_json::to_value(
+                crate::ops::idps::configure_google(
+                    &client,
+                    &google.client_id,
+                    &secret,
+                    &google.name,
+                )
+                .await?,
+            )?)
         }
     }
 }

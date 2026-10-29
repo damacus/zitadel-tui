@@ -7,8 +7,8 @@ mod support;
 mod tests;
 
 use crate::{
+    api::client::ZitadelClient,
     cli::Cli,
-    client::ZitadelClient,
     config::{AppConfig, TemplatesFile},
     tui::Record,
 };

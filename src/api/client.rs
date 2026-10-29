@@ -1,6 +1,12 @@
 use anyhow::{bail, Context, Result};
 use reqwest::{Client, Method};
+use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
+
+use super::models::{
+    App, CreateAppResult, CreateUserResult, Idp, MemberResult, Project, RawAttach, SecretResult,
+    User, WhoAmI,
+};
 
 #[derive(Clone)]
 pub struct ZitadelClient {
@@ -18,12 +24,14 @@ impl ZitadelClient {
         })
     }
 
-    pub async fn whoami(&self) -> Result<Value> {
-        self.api_request(Method::GET, "/auth/v1/users/me", None)
-            .await
+    pub async fn whoami(&self) -> Result<WhoAmI> {
+        let response = self
+            .api_request(Method::GET, "/auth/v1/users/me", None)
+            .await?;
+        decode(response)
     }
 
-    pub async fn list_projects(&self) -> Result<Vec<Value>> {
+    pub async fn list_projects(&self) -> Result<Vec<Project>> {
         let response = self
             .api_request(
                 Method::POST,
@@ -31,10 +39,10 @@ impl ZitadelClient {
                 Some(json!({ "query": { "limit": 100 } })),
             )
             .await?;
-        Ok(result_array(response))
+        decode_list(response)
     }
 
-    pub async fn get_default_project(&self) -> Result<Value> {
+    pub async fn get_default_project(&self) -> Result<Project> {
         let projects = self.list_projects().await?;
         projects
             .into_iter()
@@ -42,7 +50,7 @@ impl ZitadelClient {
             .context("no projects found in Zitadel")
     }
 
-    pub async fn list_apps(&self, project_id: &str) -> Result<Vec<Value>> {
+    pub async fn list_apps(&self, project_id: &str) -> Result<Vec<App>> {
         let response = self
             .api_request(
                 Method::POST,
@@ -50,7 +58,7 @@ impl ZitadelClient {
                 Some(json!({ "query": { "limit": 100 } })),
             )
             .await?;
-        Ok(result_array(response))
+        decode_list(response)
     }
 
     pub async fn create_oidc_app(
@@ -59,7 +67,7 @@ impl ZitadelClient {
         name: &str,
         redirect_uris: Vec<String>,
         public: bool,
-    ) -> Result<Value> {
+    ) -> Result<CreateAppResult> {
         let auth_method = if public {
             "OIDC_AUTH_METHOD_TYPE_NONE"
         } else {
@@ -71,28 +79,30 @@ impl ZitadelClient {
             "OIDC_APP_TYPE_WEB"
         };
 
-        self.api_request(
-            Method::POST,
-            &format!("/management/v1/projects/{project_id}/apps/oidc"),
-            Some(json!({
-                "name": name,
-                "redirectUris": redirect_uris,
-                "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
-                "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"],
-                "appType": app_type,
-                "authMethodType": auth_method,
-                "postLogoutRedirectUris": [],
-                "version": "OIDC_VERSION_1_0",
-                "devMode": false,
-                "accessTokenType": "OIDC_TOKEN_TYPE_BEARER",
-                "accessTokenRoleAssertion": true,
-                "idTokenRoleAssertion": true,
-                "idTokenUserinfoAssertion": true,
-                "clockSkew": "1s",
-                "additionalOrigins": []
-            })),
-        )
-        .await
+        let response = self
+            .api_request(
+                Method::POST,
+                &format!("/management/v1/projects/{project_id}/apps/oidc"),
+                Some(json!({
+                    "name": name,
+                    "redirectUris": redirect_uris,
+                    "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
+                    "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"],
+                    "appType": app_type,
+                    "authMethodType": auth_method,
+                    "postLogoutRedirectUris": [],
+                    "version": "OIDC_VERSION_1_0",
+                    "devMode": false,
+                    "accessTokenType": "OIDC_TOKEN_TYPE_BEARER",
+                    "accessTokenRoleAssertion": true,
+                    "idTokenRoleAssertion": true,
+                    "idTokenUserinfoAssertion": true,
+                    "clockSkew": "1s",
+                    "additionalOrigins": []
+                })),
+            )
+            .await?;
+        decode(response)
     }
 
     pub async fn create_native_app(
@@ -100,7 +110,7 @@ impl ZitadelClient {
         project_id: &str,
         name: &str,
         device_code: bool,
-    ) -> Result<Value> {
+    ) -> Result<CreateAppResult> {
         let mut grant_types = vec![
             "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
             "OIDC_GRANT_TYPE_REFRESH_TOKEN",
@@ -113,49 +123,58 @@ impl ZitadelClient {
         } else {
             "OIDC_TOKEN_TYPE_BEARER"
         };
-        self.api_request(
-            Method::POST,
-            &format!("/management/v1/projects/{project_id}/apps/oidc"),
-            Some(json!({
-                "name": name,
-                "redirectUris": [],
-                "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
-                "grantTypes": grant_types,
-                "appType": "OIDC_APP_TYPE_NATIVE",
-                "authMethodType": "OIDC_AUTH_METHOD_TYPE_NONE",
-                "postLogoutRedirectUris": [],
-                "version": "OIDC_VERSION_1_0",
-                "devMode": false,
-                "accessTokenType": access_token_type,
-                "accessTokenRoleAssertion": true,
-                "idTokenRoleAssertion": true,
-                "idTokenUserinfoAssertion": true,
-                "clockSkew": "1s",
-                "additionalOrigins": []
-            })),
-        )
-        .await
+        let response = self
+            .api_request(
+                Method::POST,
+                &format!("/management/v1/projects/{project_id}/apps/oidc"),
+                Some(json!({
+                    "name": name,
+                    "redirectUris": [],
+                    "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
+                    "grantTypes": grant_types,
+                    "appType": "OIDC_APP_TYPE_NATIVE",
+                    "authMethodType": "OIDC_AUTH_METHOD_TYPE_NONE",
+                    "postLogoutRedirectUris": [],
+                    "version": "OIDC_VERSION_1_0",
+                    "devMode": false,
+                    "accessTokenType": access_token_type,
+                    "accessTokenRoleAssertion": true,
+                    "idTokenRoleAssertion": true,
+                    "idTokenUserinfoAssertion": true,
+                    "clockSkew": "1s",
+                    "additionalOrigins": []
+                })),
+            )
+            .await?;
+        decode(response)
     }
 
-    pub async fn delete_app(&self, project_id: &str, app_id: &str) -> Result<Value> {
+    /// Deletes an app. Zitadel answers 204/empty on success; any non-empty body
+    /// is parsed (for error checking) and ignored.
+    pub async fn delete_app(&self, project_id: &str, app_id: &str) -> Result<()> {
         self.api_request(
             Method::DELETE,
             &format!("/management/v1/projects/{project_id}/apps/{app_id}"),
             None,
         )
-        .await
+        .await?;
+        Ok(())
     }
 
-    pub async fn regenerate_secret(&self, project_id: &str, app_id: &str) -> Result<Value> {
-        self.api_request(
-            Method::POST,
-            &format!("/management/v1/projects/{project_id}/apps/{app_id}/oidc/secret/_regenerate"),
-            None,
-        )
-        .await
+    pub async fn regenerate_secret(&self, project_id: &str, app_id: &str) -> Result<SecretResult> {
+        let response = self
+            .api_request(
+                Method::POST,
+                &format!(
+                    "/management/v1/projects/{project_id}/apps/{app_id}/oidc/secret/_regenerate"
+                ),
+                None,
+            )
+            .await?;
+        decode(response)
     }
 
-    pub async fn list_users(&self, limit: u64) -> Result<Vec<Value>> {
+    pub async fn list_users(&self, limit: u64) -> Result<Vec<User>> {
         let response = self
             .api_request(
                 Method::POST,
@@ -163,7 +182,7 @@ impl ZitadelClient {
                 Some(json!({ "query": { "limit": limit } })),
             )
             .await?;
-        Ok(result_array(response))
+        decode_list(response)
     }
 
     pub async fn create_human_user(
@@ -172,23 +191,25 @@ impl ZitadelClient {
         first_name: &str,
         last_name: &str,
         username: Option<&str>,
-    ) -> Result<Value> {
-        self.api_request(
-            Method::POST,
-            "/v2/users/human",
-            Some(json!({
-                "username": username.unwrap_or_else(|| email.split('@').next().unwrap_or(email)),
-                "profile": {
-                    "givenName": first_name,
-                    "familyName": last_name
-                },
-                "email": {
-                    "email": email,
-                    "isVerified": true
-                }
-            })),
-        )
-        .await
+    ) -> Result<CreateUserResult> {
+        let response = self
+            .api_request(
+                Method::POST,
+                "/v2/users/human",
+                Some(json!({
+                    "username": username.unwrap_or_else(|| email.split('@').next().unwrap_or(email)),
+                    "profile": {
+                        "givenName": first_name,
+                        "familyName": last_name
+                    },
+                    "email": {
+                        "email": email,
+                        "isVerified": true
+                    }
+                })),
+            )
+            .await?;
+        decode(response)
     }
 
     pub async fn import_human_user(
@@ -199,38 +220,42 @@ impl ZitadelClient {
         email: &str,
         password: &str,
         password_change_required: bool,
-    ) -> Result<Value> {
-        self.api_request(
-            Method::POST,
-            "/management/v1/users/human/_import",
-            Some(json!({
-                "userName": username,
-                "profile": {
-                    "firstName": first_name,
-                    "lastName": last_name,
-                    "displayName": format!("{first_name} {last_name}")
-                },
-                "email": {
-                    "email": email,
-                    "isEmailVerified": true
-                },
-                "password": password,
-                "passwordChangeRequired": password_change_required
-            })),
-        )
-        .await
+    ) -> Result<CreateUserResult> {
+        let response = self
+            .api_request(
+                Method::POST,
+                "/management/v1/users/human/_import",
+                Some(json!({
+                    "userName": username,
+                    "profile": {
+                        "firstName": first_name,
+                        "lastName": last_name,
+                        "displayName": format!("{first_name} {last_name}")
+                    },
+                    "email": {
+                        "email": email,
+                        "isEmailVerified": true
+                    },
+                    "password": password,
+                    "passwordChangeRequired": password_change_required
+                })),
+            )
+            .await?;
+        decode(response)
     }
 
-    pub async fn grant_iam_owner(&self, user_id: &str) -> Result<Value> {
-        self.api_request(
-            Method::POST,
-            "/admin/v1/members",
-            Some(json!({ "userId": user_id, "roles": ["IAM_OWNER"] })),
-        )
-        .await
+    pub async fn grant_iam_owner(&self, user_id: &str) -> Result<MemberResult> {
+        let response = self
+            .api_request(
+                Method::POST,
+                "/admin/v1/members",
+                Some(json!({ "userId": user_id, "roles": ["IAM_OWNER"] })),
+            )
+            .await?;
+        decode(response)
     }
 
-    pub async fn list_idps(&self) -> Result<Vec<Value>> {
+    pub async fn list_idps(&self) -> Result<Vec<Idp>> {
         let response = self
             .api_request(
                 Method::POST,
@@ -238,32 +263,35 @@ impl ZitadelClient {
                 Some(json!({ "query": { "limit": 100 } })),
             )
             .await?;
-        Ok(result_array(response))
+        decode_list(response)
     }
 
+    /// Creates a Google IDP. Zitadel returns the created idp object (with `id`).
     pub async fn add_google_idp(
         &self,
         client_id: &str,
         client_secret: &str,
         name: &str,
-    ) -> Result<Value> {
-        self.api_request(
-            Method::POST,
-            "/admin/v1/idps/google",
-            Some(json!({
-                "name": name,
-                "clientId": client_id,
-                "clientSecret": client_secret,
-                "scopes": ["openid", "profile", "email"],
-                "providerOptions": {
-                    "isLinkingAllowed": true,
-                    "isCreationAllowed": true,
-                    "isAutoCreation": false,
-                    "isAutoUpdate": true
-                }
-            })),
-        )
-        .await
+    ) -> Result<Idp> {
+        let response = self
+            .api_request(
+                Method::POST,
+                "/admin/v1/idps/google",
+                Some(json!({
+                    "name": name,
+                    "clientId": client_id,
+                    "clientSecret": client_secret,
+                    "scopes": ["openid", "profile", "email"],
+                    "providerOptions": {
+                        "isLinkingAllowed": true,
+                        "isCreationAllowed": true,
+                        "isAutoCreation": false,
+                        "isAutoUpdate": true
+                    }
+                })),
+            )
+            .await?;
+        decode(response)
     }
 
     async fn api_request(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
@@ -309,6 +337,25 @@ impl ZitadelClient {
     }
 }
 
+/// Decodes a response `Value` into a typed model, retaining the original
+/// payload on the model's `raw` field for the later `--full` projection.
+fn decode<T>(response: Value) -> Result<T>
+where
+    T: DeserializeOwned + RawAttach,
+{
+    let mut model = serde_json::from_value::<T>(response.clone())
+        .context("failed to decode Zitadel response")?;
+    model.set_raw(response);
+    Ok(model)
+}
+
+fn decode_list<T>(response: Value) -> Result<Vec<T>>
+where
+    T: DeserializeOwned + RawAttach,
+{
+    result_array(response).into_iter().map(decode).collect()
+}
+
 fn result_array(value: Value) -> Vec<Value> {
     value
         .get("result")
@@ -340,7 +387,64 @@ mod tests {
 
         mock.assert_async().await;
         assert_eq!(projects.len(), 1);
-        assert_eq!(projects[0]["id"], "p1");
+        assert_eq!(projects[0].id.as_deref(), Some("p1"));
+        assert_eq!(projects[0].name.as_deref(), Some("Platform"));
+    }
+
+    #[tokio::test]
+    async fn list_apps_decodes_models_and_keeps_raw_payload() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/management/v1/projects/project-1/apps/_search")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"result":[{"id":"app-1","name":"grafana","state":"ACTIVE","oidcConfig":{"clientId":"cid-1","authMethodType":"OIDC_AUTH_METHOD_TYPE_BASIC","redirectUris":["https://grafana.example.com/callback"]},"creationDate":"2026-01-01T00:00:00Z"}]}"#,
+            )
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let apps = client.list_apps("project-1").await.unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(apps.len(), 1);
+        let app = &apps[0];
+        assert_eq!(app.id.as_deref(), Some("app-1"));
+        assert_eq!(
+            app.oidc_config
+                .as_ref()
+                .and_then(|oidc| oidc.client_id.as_deref()),
+            Some("cid-1")
+        );
+        assert_eq!(app.kind(), "confidential");
+        // raw retains fields the typed projection drops (for a later --full flag)
+        assert_eq!(app.raw["creationDate"], "2026-01-01T00:00:00Z");
+        assert_eq!(app.raw["oidcConfig"]["clientId"], "cid-1");
+    }
+
+    #[tokio::test]
+    async fn whoami_decodes_user_identity_with_aliases() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/auth/v1/users/me")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"user":{"id":"u-1","preferredLoginName":"zitadel-admin-sa"}}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let me = client.whoami().await.unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(me.user.user_id.as_deref(), Some("u-1"));
+        assert_eq!(
+            me.user.preferred_login_name.as_deref(),
+            Some("zitadel-admin-sa")
+        );
     }
 
     #[tokio::test]
@@ -372,8 +476,8 @@ mod tests {
             .unwrap();
 
         mock.assert_async().await;
-        assert_eq!(created["appId"], "app-1");
-        assert_eq!(created["clientId"], "cid-1");
+        assert_eq!(created.app_id.as_deref(), Some("app-1"));
+        assert_eq!(created.client_id.as_deref(), Some("cid-1"));
     }
 
     #[tokio::test]
@@ -452,7 +556,7 @@ mod tests {
             .unwrap();
 
         mock.assert_async().await;
-        assert_eq!(created["clientId"], "cid-1");
+        assert_eq!(created.client_id.as_deref(), Some("cid-1"));
     }
 
     #[tokio::test]
@@ -482,7 +586,7 @@ mod tests {
             .unwrap();
 
         mock.assert_async().await;
-        assert_eq!(created["clientId"], "cid-2");
+        assert_eq!(created.client_id.as_deref(), Some("cid-2"));
     }
 
     #[tokio::test]
@@ -496,10 +600,27 @@ mod tests {
             .await;
 
         let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
-        let response = client.delete_app("project-1", "app-1").await.unwrap();
+        client.delete_app("project-1", "app-1").await.unwrap();
 
         mock.assert_async().await;
-        assert_eq!(response, json!({}));
+    }
+
+    #[tokio::test]
+    async fn delete_app_ignores_non_empty_body() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("DELETE", "/management/v1/projects/project-1/apps/app-2")
+            .match_header("authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"details":{"sequence":"1"}}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        client.delete_app("project-1", "app-2").await.unwrap();
+
+        mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -522,6 +643,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn response_items_failing_typed_decode_report_decode_error() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/management/v1/users/_search")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"result": [{"id": 42}]}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let error = client.list_users(100).await.unwrap_err().to_string();
+
+        mock.assert_async().await;
+        assert!(error.contains("failed to decode Zitadel response"));
+        assert!(!error.contains("42"));
+    }
+
+    #[tokio::test]
     async fn grant_iam_owner_sends_expected_payload() {
         let mut server = Server::new_async().await;
         let mock = server
@@ -541,8 +681,27 @@ mod tests {
         let response = client.grant_iam_owner("user-1").await.unwrap();
 
         mock.assert_async().await;
-        assert_eq!(response["memberId"], "member-1");
+        assert_eq!(response.member_id.as_deref(), Some("member-1"));
     }
+
+    #[tokio::test]
+    async fn grant_iam_owner_tolerates_empty_member_body() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/admin/v1/members")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let response = client.grant_iam_owner("user-1").await.unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(response.member_id, None);
+    }
+
     #[tokio::test]
     async fn regenerate_secret_uses_expected_endpoint() {
         let mut server = Server::new_async().await;
@@ -565,6 +724,34 @@ mod tests {
             .unwrap();
 
         mock.assert_async().await;
-        assert_eq!(response["clientSecret"], "new-secret");
+        assert_eq!(response.client_secret.as_deref(), Some("new-secret"));
+    }
+
+    #[tokio::test]
+    async fn add_google_idp_decodes_created_idp() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/admin/v1/idps/google")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::PartialJson(json!({
+                "name": "Google",
+                "clientId": "google-client",
+                "clientSecret": "google-secret"
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"id":"idp-1","name":"Google"}"#)
+            .create_async()
+            .await;
+
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let idp = client
+            .add_google_idp("google-client", "google-secret", "Google")
+            .await
+            .unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(idp.id.as_deref(), Some("idp-1"));
+        assert_eq!(idp.name.as_deref(), Some("Google"));
     }
 }

@@ -1,19 +1,17 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use anyhow::Result;
 use reqwest::Client as HttpClient;
-use serde_json::Value;
 
 use crate::{
     auth::resolve_access_token,
     config::{AppTemplate, UserTemplate},
+    ops,
     tui::{CanvasMode, FormState, MessageState, PendingAction},
 };
 
 use super::{
-    forms::{
-        bool_value, checkbox_enabled, create_quick_user, form_value, optional_value, split_csv,
-    },
+    forms::{bool_value, checkbox_enabled, form_value, optional_value, split_csv},
     records::app_creation_summary,
     support::error_mode,
     TuiConductor,
@@ -43,7 +41,7 @@ impl TuiConductor {
         match pending {
             PendingAction::DeleteApplication { app_id, name } => match self.client.as_ref() {
                 Some(client) => {
-                    let result = client.delete_app(&self.project, &app_id).await;
+                    let result = ops::apps::delete(client, &self.project, &app_id).await;
                     self.finish_simple_mutation(
                         result,
                         "Application deleted",
@@ -59,7 +57,7 @@ impl TuiConductor {
                 client_id,
             } => match self.client.as_ref() {
                 Some(client) => {
-                    let result = client.regenerate_secret(&self.project, &app_id).await;
+                    let result = ops::apps::regenerate_secret(client, &self.project, &app_id).await;
                     match result {
                         Ok(value) => {
                             self.refresh_runtime().await;
@@ -70,10 +68,7 @@ impl TuiConductor {
                                     format!("Client ID: {client_id}"),
                                     format!(
                                         "Client Secret: {}",
-                                        value
-                                            .get("clientSecret")
-                                            .and_then(|item| item.as_str())
-                                            .unwrap_or("missing")
+                                        value.client_secret.as_deref().unwrap_or("missing")
                                     ),
                                     "This secret is only shown once.".to_string(),
                                 ],
@@ -86,7 +81,7 @@ impl TuiConductor {
             },
             PendingAction::GrantIamOwner { user_id, username } => match self.client.as_ref() {
                 Some(client) => {
-                    let result = client.grant_iam_owner(&user_id).await;
+                    let result = ops::users::grant_iam_owner(client, &user_id).await;
                     self.finish_simple_mutation(
                         result,
                         "IAM_OWNER granted",
@@ -113,9 +108,9 @@ impl TuiConductor {
         }
     }
 
-    async fn finish_simple_mutation(
+    async fn finish_simple_mutation<T>(
         &mut self,
-        result: Result<Value>,
+        result: Result<T>,
         title: &str,
         lines: Vec<String>,
     ) -> CanvasMode {
@@ -148,14 +143,14 @@ impl TuiConductor {
             } else {
                 manual_name
             };
-            client
-                .create_oidc_app(
-                    &self.project,
-                    &resolved_name,
-                    template.redirect_uris.clone(),
-                    template.public,
-                )
-                .await
+            ops::apps::create_oidc(
+                client,
+                &self.project,
+                &resolved_name,
+                template.redirect_uris.clone(),
+                template.public,
+            )
+            .await
         } else {
             let name = form_value(form, "name");
             let redirect_uris = split_csv(&form_value(form, "redirect_uris"));
@@ -165,14 +160,14 @@ impl TuiConductor {
                     "Name and redirect URIs are required for manual application creation.",
                 );
             }
-            client
-                .create_oidc_app(
-                    &self.project,
-                    &name,
-                    redirect_uris,
-                    bool_value(form, "public"),
-                )
-                .await
+            ops::apps::create_oidc(
+                client,
+                &self.project,
+                &name,
+                redirect_uris,
+                bool_value(form, "public"),
+            )
+            .await
         };
 
         match result {
@@ -180,12 +175,9 @@ impl TuiConductor {
                 self.refresh_runtime().await;
                 let mut lines = vec![format!(
                     "Client ID: {}",
-                    value
-                        .get("clientId")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("missing")
+                    value.client_id.as_deref().unwrap_or("missing")
                 )];
-                if let Some(secret) = value.get("clientSecret").and_then(|v| v.as_str()) {
+                if let Some(secret) = value.client_secret.as_deref() {
                     lines.push(format!("Client Secret: {secret}"));
                     lines.push("This secret is only shown once.".to_string());
                 }
@@ -202,89 +194,34 @@ impl TuiConductor {
         let Some(client) = self.client.as_ref() else {
             return error_mode("Authentication required", "Run setup first.");
         };
-        let selected_templates: Vec<(String, AppTemplate)> = form
+        let mut selected: BTreeMap<String, AppTemplate> = BTreeMap::new();
+        let mut names = Vec::new();
+        for field in form
             .fields
             .iter()
             .filter(|field| checkbox_enabled(&field.value))
-            .filter_map(|field| {
-                self.templates
-                    .apps
-                    .get(&field.label)
-                    .cloned()
-                    .map(|template| (field.label.clone(), template))
-            })
-            .collect();
-
-        let mut created = Vec::new();
-        for chunk in selected_templates.chunks(2) {
-            match chunk {
-                [first] => match client
-                    .create_oidc_app(
-                        &self.project,
-                        &first.0,
-                        first.1.redirect_uris.clone(),
-                        first.1.public,
-                    )
-                    .await
-                {
-                    Ok(value) => created.push(app_creation_summary(&first.0, &value)),
-                    Err(error) => {
-                        return error_mode(
-                            "Quick setup failed",
-                            &format!("{} failed: {}", first.0, error),
-                        )
-                    }
-                },
-                [first, second] => {
-                    let first_name = first.0.clone();
-                    let first_template = first.1.clone();
-                    let second_name = second.0.clone();
-                    let second_template = second.1.clone();
-                    let (first_result, second_result) = tokio::join!(
-                        client.create_oidc_app(
-                            &self.project,
-                            &first_name,
-                            first_template.redirect_uris.clone(),
-                            first_template.public,
-                        ),
-                        client.create_oidc_app(
-                            &self.project,
-                            &second_name,
-                            second_template.redirect_uris.clone(),
-                            second_template.public,
-                        ),
-                    );
-                    let first_value = match first_result {
-                        Ok(value) => value,
-                        Err(error) => {
-                            return error_mode(
-                                "Quick setup failed",
-                                &format!("{} failed: {}", first_name, error),
-                            )
-                        }
-                    };
-                    let second_value = match second_result {
-                        Ok(value) => value,
-                        Err(error) => {
-                            return error_mode(
-                                "Quick setup failed",
-                                &format!("{} failed: {}", second_name, error),
-                            )
-                        }
-                    };
-                    created.push(app_creation_summary(&first_name, &first_value));
-                    created.push(app_creation_summary(&second_name, &second_value));
-                }
-                _ => unreachable!("chunks(2) yields at most two items"),
+        {
+            if let Some(template) = self.templates.apps.get(&field.label) {
+                names.push(field.label.clone());
+                selected.insert(field.label.clone(), template.clone());
             }
         }
+
+        let created = match ops::apps::quick_setup(client, &self.project, &selected, &names).await {
+            Ok(created) => created,
+            Err(error) => return error_mode("Quick setup failed", &error.to_string()),
+        };
         self.refresh_runtime().await;
         CanvasMode::Success(MessageState {
             title: "Quick setup complete".to_string(),
             lines: if created.is_empty() {
                 vec!["No application templates were selected.".to_string()]
             } else {
-                created
+                names
+                    .iter()
+                    .zip(created.iter())
+                    .map(|(name, result)| app_creation_summary(name, result))
+                    .collect()
             },
         })
     }
@@ -303,14 +240,14 @@ impl TuiConductor {
             );
         }
 
-        match client
-            .create_human_user(
-                &email,
-                &first_name,
-                &last_name,
-                optional_value(form, "username").as_deref(),
-            )
-            .await
+        match ops::users::create_human(
+            client,
+            &email,
+            &first_name,
+            &last_name,
+            optional_value(form, "username").as_deref(),
+        )
+        .await
         {
             Ok(value) => {
                 self.refresh_runtime().await;
@@ -318,10 +255,7 @@ impl TuiConductor {
                     title: "User created".to_string(),
                     lines: vec![format!(
                         "User ID: {}",
-                        value
-                            .get("userId")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("missing")
+                        value.user_id.as_deref().unwrap_or("missing")
                     )],
                 })
             }
@@ -350,9 +284,16 @@ impl TuiConductor {
             );
         }
 
-        match client
-            .import_human_user(&username, &first_name, &last_name, &email, &password, true)
-            .await
+        match ops::users::import_admin(
+            client,
+            &username,
+            &first_name,
+            &last_name,
+            &email,
+            &password,
+            true,
+        )
+        .await
         {
             Ok(_) => {
                 self.refresh_runtime().await;
@@ -382,45 +323,15 @@ impl TuiConductor {
             .filter_map(|(index, _)| self.templates.users.get(index).cloned())
             .collect();
 
+        let created = match ops::users::quick_setup(client, selected_users).await {
+            Ok(created) => created,
+            Err(error) => return error_mode("Quick setup failed", &error.to_string()),
+        };
         let mut lines = Vec::new();
-        for chunk in selected_users.chunks(2) {
-            match chunk {
-                [first] => match create_quick_user(client, first.clone()).await {
-                    Ok(mut created_lines) => lines.append(&mut created_lines),
-                    Err(error) => {
-                        return error_mode(
-                            "Quick setup failed",
-                            &format!("Failed to create {}: {}", first.email, error),
-                        )
-                    }
-                },
-                [first, second] => {
-                    let first_user = first.clone();
-                    let second_user = second.clone();
-                    let (first_result, second_result) = tokio::join!(
-                        create_quick_user(client, first_user),
-                        create_quick_user(client, second_user),
-                    );
-                    match first_result {
-                        Ok(mut created_lines) => lines.append(&mut created_lines),
-                        Err(error) => {
-                            return error_mode(
-                                "Quick setup failed",
-                                &format!("Failed to create {}: {}", first.email, error),
-                            )
-                        }
-                    }
-                    match second_result {
-                        Ok(mut created_lines) => lines.append(&mut created_lines),
-                        Err(error) => {
-                            return error_mode(
-                                "Quick setup failed",
-                                &format!("Failed to create {}: {}", second.email, error),
-                            )
-                        }
-                    }
-                }
-                _ => unreachable!("chunks(2) yields at most two items"),
+        for outcome in &created {
+            lines.push(format!("Created {}", outcome.email));
+            if outcome.iam_owner_granted {
+                lines.push(format!("Granted IAM_OWNER to {}", outcome.email));
             }
         }
         self.refresh_runtime().await;
@@ -447,20 +358,14 @@ impl TuiConductor {
                 "Client ID and client secret are required for Google IDP setup.",
             );
         }
-        match client
-            .add_google_idp(&client_id, &client_secret, &name)
-            .await
-        {
+        match ops::idps::configure_google(client, &client_id, &client_secret, &name).await {
             Ok(value) => {
                 self.refresh_runtime().await;
                 CanvasMode::Success(MessageState {
                     title: "Google IDP configured".to_string(),
                     lines: vec![format!(
                         "IDP ID: {}",
-                        value
-                            .get("id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("missing")
+                        value.id.as_deref().unwrap_or("missing")
                     )],
                 })
             }

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 
-use crate::{auth::resolve_access_token, cli::Cli, client::ZitadelClient, config::AppConfig};
+use crate::{api::client::ZitadelClient, auth::resolve_access_token, cli::Cli, config::AppConfig};
 
 pub async fn authenticated_client(args: &Cli, config: &AppConfig) -> Result<ZitadelClient> {
     let host = resolved_host(args, config)?;
@@ -34,28 +34,6 @@ pub fn resolved_host_or_cache(args: &Cli, config: &AppConfig) -> Result<String> 
                 "Zitadel URL is required via --host, ZITADEL_URL, config, or a cached login session",
             )
     })
-}
-
-pub async fn resolved_project_id(
-    client: &ZitadelClient,
-    args: &Cli,
-    config: &AppConfig,
-) -> Result<String> {
-    if let Some(project_id) = args
-        .project_id
-        .clone()
-        .or_else(|| config.project_id.clone())
-    {
-        return Ok(project_id);
-    }
-
-    client
-        .get_default_project()
-        .await?
-        .get("id")
-        .and_then(|value| value.as_str())
-        .map(ToOwned::to_owned)
-        .context("failed to determine default project id")
 }
 
 #[cfg(test)]

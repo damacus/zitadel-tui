@@ -5,15 +5,14 @@ use super::{
         bool_value, checkbox_enabled, checkbox_field, choice_field, form_value, optional_value,
         secret_field, split_csv, text_field, toggle_field,
     },
-    records::{
-        app_creation_summary, map_app_record, map_idp_record, map_user_record, string_field,
-    },
+    records::app_creation_summary,
     support::error_mode,
     TuiConductor,
 };
 use crate::{
+    api::client::ZitadelClient,
+    api::models::{App, CreateAppResult, Idp, User},
     cli::Cli,
-    client::ZitadelClient,
     config::{AppConfig, AppTemplate, TemplatesFile, UserTemplate},
     tui::{CanvasMode, FormState, PendingAction, Record, ResourceKind},
 };
@@ -21,6 +20,21 @@ use std::{
     env, fs,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+fn record_for_app(value: serde_json::Value) -> Record {
+    let app: App = serde_json::from_value(value).expect("app fixture decodes");
+    Record::from(&app)
+}
+
+fn record_for_user(value: serde_json::Value) -> Record {
+    let user: User = serde_json::from_value(value).expect("user fixture decodes");
+    Record::from(&user)
+}
+
+fn record_for_idp(value: serde_json::Value) -> Record {
+    let idp: Idp = serde_json::from_value(value).expect("idp fixture decodes");
+    Record::from(&idp)
+}
 
 fn temp_cache_path() -> std::path::PathBuf {
     let unique = SystemTime::now()
@@ -474,7 +488,7 @@ fn map_app_record_extracts_oidc_fields() {
             "redirectUris": ["https://grafana.example.com/callback", "https://grafana.example.com/silent"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.id, "app-1");
     assert_eq!(record.name, "grafana");
     assert_eq!(record.kind, "public");
@@ -495,7 +509,7 @@ fn map_app_record_confidential_auth_method() {
             "redirectUris": []
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "confidential");
     assert_eq!(record.summary, "0 redirects");
 }
@@ -511,7 +525,7 @@ fn map_app_record_extracts_api_fields() {
             "clientId": "api-client-1"
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.id, "app-3");
     assert_eq!(record.name, "Management API");
     assert_eq!(record.kind, "api");
@@ -533,7 +547,7 @@ fn map_app_record_uses_app_type_when_auth_method_missing() {
             "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "confidential");
     assert_eq!(record.detail, "cid-4");
     assert_eq!(record.summary, "1 redirects");
@@ -551,7 +565,7 @@ fn map_app_record_keeps_oidc_kind_when_auth_method_and_app_type_missing() {
             "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "oidc");
     assert_eq!(record.detail, "cid-5");
     assert_eq!(record.summary, "1 redirects");
@@ -569,7 +583,7 @@ fn map_app_record_classifies_native_app_type() {
             "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "native");
 }
 
@@ -586,14 +600,14 @@ fn map_app_record_classifies_device_code_grant() {
             "grantTypes": ["OIDC_GRANT_TYPE_DEVICE_CODE"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "device-code");
 }
 
 #[test]
 fn map_app_record_missing_oidc_config() {
     let app = serde_json::json!({"id": "app-4", "name": "plain"});
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "unknown");
     assert_eq!(record.detail, "missing-client-id");
     assert_eq!(record.summary, "0 redirects");
@@ -611,7 +625,7 @@ fn map_user_record_extracts_human_fields() {
             "profile": {"displayName": "Admin User"}
         }
     });
-    let record = map_user_record(user);
+    let record = record_for_user(user);
     assert_eq!(record.id, "user-1");
     assert_eq!(record.name, "admin");
     assert_eq!(record.kind, "human ACTIVE");
@@ -632,7 +646,7 @@ fn map_user_record_extracts_machine_fields() {
             "name": "cluster service account"
         }
     });
-    let record = map_user_record(user);
+    let record = record_for_user(user);
     assert_eq!(record.id, "user-2");
     assert_eq!(record.name, "cluster service account");
     assert_eq!(record.kind, "machine ACTIVE");
@@ -649,7 +663,7 @@ fn map_user_record_machine_falls_back_to_login_name() {
         "loginNames": ["worker@example.com"],
         "machine": {}
     });
-    let record = map_user_record(user);
+    let record = record_for_user(user);
     assert_eq!(record.name, "worker");
     assert_eq!(record.kind, "machine unknown");
     assert_eq!(record.summary, "worker@example.com");
@@ -659,7 +673,7 @@ fn map_user_record_machine_falls_back_to_login_name() {
 #[test]
 fn map_user_record_missing_human_fields() {
     let user = serde_json::json!({"id": "user-4", "userName": "bot"});
-    let record = map_user_record(user);
+    let record = record_for_user(user);
     assert_eq!(record.kind, "human unknown");
     assert_eq!(record.summary, "no email");
     assert_eq!(record.detail, "human user");
@@ -673,7 +687,7 @@ fn map_idp_record_extracts_fields() {
         "state": "ACTIVE",
         "type": "google"
     });
-    let record = map_idp_record(idp);
+    let record = record_for_idp(idp);
     assert_eq!(record.id, "idp-1");
     assert_eq!(record.name, "Google");
     assert_eq!(record.kind, "ACTIVE");
@@ -685,7 +699,7 @@ fn map_idp_record_extracts_fields() {
 #[test]
 fn map_idp_record_missing_fields() {
     let idp = serde_json::json!({});
-    let record = map_idp_record(idp);
+    let record = record_for_idp(idp);
     assert_eq!(record.id, "missing-id");
     assert_eq!(record.name, "unnamed-idp");
     assert_eq!(record.kind, "unknown");
@@ -772,7 +786,8 @@ fn split_csv_single_value() {
 
 #[test]
 fn app_creation_summary_with_client_id() {
-    let value = serde_json::json!({"clientId": "cid-123"});
+    let value: CreateAppResult =
+        serde_json::from_value(serde_json::json!({"clientId": "cid-123"})).unwrap();
     assert_eq!(
         app_creation_summary("grafana", &value),
         "grafana -> cid-123"
@@ -781,7 +796,7 @@ fn app_creation_summary_with_client_id() {
 
 #[test]
 fn app_creation_summary_missing_client_id() {
-    let value = serde_json::json!({});
+    let value: CreateAppResult = serde_json::from_value(serde_json::json!({})).unwrap();
     assert_eq!(
         app_creation_summary("grafana", &value),
         "grafana -> created"
@@ -797,13 +812,6 @@ fn checkbox_enabled_truthy_values() {
     assert!(!checkbox_enabled("false"));
     assert!(!checkbox_enabled(""));
     assert!(!checkbox_enabled("maybe"));
-}
-
-#[test]
-fn string_field_extracts_value_or_fallback() {
-    let value = serde_json::json!({"name": "test"});
-    assert_eq!(string_field(&value, "name", "default"), "test");
-    assert_eq!(string_field(&value, "missing", "default"), "default");
 }
 
 #[test]

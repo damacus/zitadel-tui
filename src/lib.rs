@@ -1,10 +1,11 @@
+pub mod api;
 pub mod auth;
 pub mod cli;
-pub mod client;
 pub mod commands;
 pub mod conductor;
 pub mod config;
 pub mod oidc;
+pub mod ops;
 pub mod output;
 #[cfg(test)]
 pub mod test_support;
