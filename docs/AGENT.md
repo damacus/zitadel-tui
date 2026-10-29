@@ -152,7 +152,7 @@ alternatives. `command` is the value of the envelope's `command` field.
 | `users.quick-setup`      | `users quick-setup`                                                                         |
 | `idps.list`              | `idps list [--limit N]`                                                                     |
 | `idps.get`               | `idps get (--idp-id ID \| --name NAME)`                                                     |
-| `idps.configure-google`  | `idps configure-google --client-id CID [--client-secret S] [--name N]`                      |
+| `idps.configure-google`  | `idps configure-google --client-id CID --client-secret S [--name N]`                        |
 | `projects.list`          | `projects list [--limit N]`                                                                 |
 | `auth.login`             | `auth login [--client-id CID]`                                                              |
 | `auth.logout`            | `auth logout`                                                                               |
