@@ -36,26 +36,6 @@ pub fn resolved_host_or_cache(args: &Cli, config: &AppConfig) -> Result<String> 
     })
 }
 
-pub async fn resolved_project_id(
-    client: &ZitadelClient,
-    args: &Cli,
-    config: &AppConfig,
-) -> Result<String> {
-    if let Some(project_id) = args
-        .project_id
-        .clone()
-        .or_else(|| config.project_id.clone())
-    {
-        return Ok(project_id);
-    }
-
-    client
-        .get_default_project()
-        .await?
-        .id
-        .context("failed to determine default project id")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

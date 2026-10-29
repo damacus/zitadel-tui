@@ -1,9 +1,9 @@
-use anyhow::{Context, Result};
 use reqwest::Client as HttpClient;
 
 use crate::{
     api::client::ZitadelClient,
     auth::resolve_access_token,
+    ops,
     tui::{Record, TuiBootstrap},
 };
 
@@ -111,7 +111,7 @@ impl TuiConductor {
             return;
         };
 
-        let Ok(project_id) = resolve_project_id(
+        let Ok(project_id) = ops::resolve_project_id(
             &client,
             self.cli.project_id.clone(),
             self.config.project_id.clone(),
@@ -124,9 +124,9 @@ impl TuiConductor {
 
         self.project = project_id.clone();
         let (apps, users, idps) = tokio::join!(
-            client.list_apps(&project_id),
-            client.list_users(100),
-            client.list_idps()
+            ops::apps::list(&client, &project_id),
+            ops::users::list(&client, 100),
+            ops::idps::list(&client)
         );
         self.app_records = apps
             .map(|apps| apps.iter().map(Record::from).collect())
@@ -139,20 +139,4 @@ impl TuiConductor {
             .unwrap_or_default();
         self.client = Some(client);
     }
-}
-
-pub(crate) async fn resolve_project_id(
-    client: &ZitadelClient,
-    cli_project: Option<String>,
-    config_project: Option<String>,
-) -> Result<String> {
-    if let Some(project) = cli_project.or(config_project) {
-        return Ok(project);
-    }
-
-    client
-        .get_default_project()
-        .await?
-        .id
-        .context("failed to determine default project id")
 }
