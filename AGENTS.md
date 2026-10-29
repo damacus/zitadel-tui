@@ -27,3 +27,12 @@
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
+
+## Agent-consumable CLI
+
+The binary's headless surface is JSON-envelope-first: every subcommand prints
+`{"command":…,"ok":…,"result"|"error":…}` on stdout and exits 0 (success), 1
+(command error — branch on `error.kind`), or 2 (arg parse failure). No command
+prompts. The full machine-readable contract — command map, selectors, error
+kinds, auth precedence, recipes — lives in `docs/AGENT.md`; run
+`zitadel-tui agent` to print it verbatim.

@@ -40,8 +40,10 @@ zitadel-tui auth --help
 zitadel-tui config --help
 ```
 
-Supplying a subcommand runs a one-shot command. The deprecated `--once` flag still
-works, but is no longer required.
+Supplying a subcommand runs a one-shot command. Output is always a JSON
+envelope on stdout (`ok:true` plus `result`, or `ok:false` plus a typed
+`error`); exit codes are `0` success, `1` command error, `2` argument parse
+failure.
 
 ## Headless examples
 
@@ -69,7 +71,7 @@ zitadel-tui idps list
 zitadel-tui idps configure-google \
   --client-id google-client-id \
   --client-secret google-client-secret
-zitadel-tui --json auth status
+zitadel-tui auth status
 zitadel-tui config show
 ```
 

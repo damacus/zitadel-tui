@@ -34,12 +34,12 @@ credential for administrative workflows.
 
 `device_client_id`
 : Client ID of the Zitadel native app used for `auth login` (OAuth Device Flow).
-Written automatically when you run `auth login` and enter the client ID
-interactively, or when `apps create-native --device-code` returns a client ID.
-Can be set in advance to skip the prompt. Not a secret — this is a public client
-with no `client_secret`. OIDC Device Flow sessions are limited to `auth login`,
-`auth logout`, and `auth status`; app, user, IDP, and admin API operations
-require service-account JSON or PAT credentials.
+Written automatically when `apps create-native --device-code` returns a client
+ID. Set it in advance — or pass `--client-id` to `auth login` — because headless
+commands never prompt and a missing client ID is a `usage` error. Not a secret —
+this is a public client with no `client_secret`. OIDC Device Flow sessions are
+limited to `auth login`, `auth logout`, and `auth status`; app, user, IDP, and
+admin API operations require service-account JSON or PAT credentials.
 
 ## Apps and users templates
 
@@ -142,9 +142,8 @@ Example: `zitadel-tui --config ./config.toml`
 ## Notes
 
 - `auth status`, `auth logout`, and `config show` have no command-specific flags
-- `auth login` saves `device_client_id` to the canonical config path if you
-  enter it interactively. `apps create-native --device-code` also saves the
-  returned client ID. Subsequent OIDC session logins only need `auth login`
-  with no flags
+- `apps create-native --device-code` saves the returned client ID as
+  `device_client_id`. With it set, subsequent OIDC session logins only need
+  `auth login` with no flags
 - The token cache is host-specific; running `auth login` against a different
   host overwrites the cache
