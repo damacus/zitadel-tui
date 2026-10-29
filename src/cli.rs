@@ -39,6 +39,8 @@ pub enum Command {
     Projects(ProjectsCommand),
     Auth(AuthCommand),
     Config(ConfigCommand),
+    /// Print the LLM agent usage guide (docs/AGENT.md) verbatim.
+    Agent,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -341,6 +343,7 @@ pub fn command_path(command: &Command) -> &'static str {
         Command::Config(config) => match &config.action {
             ConfigAction::Show => "config.show",
         },
+        Command::Agent => "agent",
     }
 }
 
@@ -418,7 +421,7 @@ mod tests {
 
     #[test]
     fn command_paths_cover_every_variant() {
-        let cases: [(Command, &str); 21] = [
+        let cases: [(Command, &str); 22] = [
             (
                 Command::Apps(AppsCommand {
                     action: AppsAction::List(ListArgs { limit: 100 }),
@@ -591,6 +594,7 @@ mod tests {
                 }),
                 "config.show",
             ),
+            (Command::Agent, "agent"),
         ];
 
         for (command, expected) in cases {
@@ -735,6 +739,12 @@ mod tests {
         assert_eq!(cli.host.as_deref(), Some("https://zitadel.example.com"));
         assert_eq!(cli.token.as_deref(), Some("tok"));
         assert_eq!(cli.project_id.as_deref(), Some("proj-1"));
+    }
+
+    #[test]
+    fn parses_agent_command() {
+        let cli = Cli::parse_from(["zitadel-tui", "agent"]);
+        assert!(matches!(cli.command, Some(Command::Agent)));
     }
 
     #[test]

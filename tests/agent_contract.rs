@@ -304,6 +304,21 @@ fn apps_create_without_name_or_redirect_uris_is_usage_not_auth() {
 }
 
 #[test]
+fn agent_prints_guide_verbatim_outside_the_envelope() {
+    // `agent` is a doc surface, not an API command: it exits 0 and prints
+    // the guide as plain markdown — deliberately NOT a JSON envelope.
+    let output = bin()
+        .arg("agent")
+        .output()
+        .expect("failed to spawn zitadel-tui");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("error.kind"), "guide missing: {stdout}");
+    assert!(serde_json::from_str::<Value>(&stdout).is_err());
+}
+
+#[test]
 fn unknown_flag_exits_2() {
     let status = bin()
         .arg("--definitely-not-a-flag")
