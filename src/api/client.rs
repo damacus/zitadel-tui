@@ -31,31 +31,31 @@ impl ZitadelClient {
         decode(response)
     }
 
-    pub async fn list_projects(&self) -> Result<Vec<Project>> {
+    pub async fn list_projects(&self, limit: u64) -> Result<Vec<Project>> {
         let response = self
             .api_request(
                 Method::POST,
                 "/management/v1/projects/_search",
-                Some(json!({ "query": { "limit": 100 } })),
+                Some(json!({ "query": { "limit": limit } })),
             )
             .await?;
         decode_list(response)
     }
 
     pub async fn get_default_project(&self) -> Result<Project> {
-        let projects = self.list_projects().await?;
+        let projects = self.list_projects(1).await?;
         projects
             .into_iter()
             .next()
             .context("no projects found in Zitadel")
     }
 
-    pub async fn list_apps(&self, project_id: &str) -> Result<Vec<App>> {
+    pub async fn list_apps(&self, project_id: &str, limit: u64) -> Result<Vec<App>> {
         let response = self
             .api_request(
                 Method::POST,
                 &format!("/management/v1/projects/{project_id}/apps/_search"),
-                Some(json!({ "query": { "limit": 100 } })),
+                Some(json!({ "query": { "limit": limit } })),
             )
             .await?;
         decode_list(response)
@@ -255,12 +255,12 @@ impl ZitadelClient {
         decode(response)
     }
 
-    pub async fn list_idps(&self) -> Result<Vec<Idp>> {
+    pub async fn list_idps(&self, limit: u64) -> Result<Vec<Idp>> {
         let response = self
             .api_request(
                 Method::POST,
                 "/admin/v1/idps/_search",
-                Some(json!({ "query": { "limit": 100 } })),
+                Some(json!({ "query": { "limit": limit } })),
             )
             .await?;
         decode_list(response)
@@ -375,7 +375,7 @@ mod tests {
         let mock = server
             .mock("POST", "/management/v1/projects/_search")
             .match_header("authorization", "Bearer test-token")
-            .match_body(Matcher::Json(json!({ "query": { "limit": 100 } })))
+            .match_body(Matcher::Json(json!({ "query": { "limit": 25 } })))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"result":[{"id":"p1","name":"Platform"}]}"#)
@@ -383,7 +383,7 @@ mod tests {
             .await;
 
         let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
-        let projects = client.list_projects().await.unwrap();
+        let projects = client.list_projects(25).await.unwrap();
 
         mock.assert_async().await;
         assert_eq!(projects.len(), 1);
@@ -397,6 +397,7 @@ mod tests {
         let mock = server
             .mock("POST", "/management/v1/projects/project-1/apps/_search")
             .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::Json(json!({ "query": { "limit": 7 } })))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -406,7 +407,7 @@ mod tests {
             .await;
 
         let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
-        let apps = client.list_apps("project-1").await.unwrap();
+        let apps = client.list_apps("project-1", 7).await.unwrap();
 
         mock.assert_async().await;
         assert_eq!(apps.len(), 1);
@@ -492,7 +493,7 @@ mod tests {
             .await;
 
         let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
-        let error = client.list_idps().await.unwrap_err().to_string();
+        let error = client.list_idps(100).await.unwrap_err().to_string();
 
         mock.assert_async().await;
         assert!(error.contains("403"));

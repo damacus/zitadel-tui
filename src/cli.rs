@@ -34,13 +34,14 @@ pub enum Command {
     Apps(AppsCommand),
     Users(UsersCommand),
     Idps(IdpsCommand),
+    Projects(ProjectsCommand),
     Auth(AuthCommand),
     Config(ConfigCommand),
 }
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum AppsAction {
-    List,
+    List(ListArgs),
     Create(CreateAppArgs),
     CreateNative(CreateNativeAppArgs),
     Delete(DeleteAppArgs),
@@ -56,7 +57,7 @@ pub struct AppsCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum UsersAction {
-    List,
+    List(ListArgs),
     Create(CreateUserArgs),
     CreateAdmin(CreateAdminArgs),
     GrantIamOwner(GrantUserArgs),
@@ -71,7 +72,7 @@ pub struct UsersCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum IdpsAction {
-    List,
+    List(ListArgs),
     ConfigureGoogle(ConfigureGoogleArgs),
 }
 
@@ -79,6 +80,17 @@ pub enum IdpsAction {
 pub struct IdpsCommand {
     #[command(subcommand)]
     pub action: IdpsAction,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ProjectsAction {
+    List(ListArgs),
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct ProjectsCommand {
+    #[command(subcommand)]
+    pub action: ProjectsAction,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -109,6 +121,18 @@ pub enum ConfigAction {
 pub struct ConfigCommand {
     #[command(subcommand)]
     pub action: ConfigAction,
+}
+
+/// Shared `--limit` flag for every `list` action.
+#[derive(clap::Args, Debug, Clone)]
+pub struct ListArgs {
+    /// Maximum number of items to return.
+    #[arg(
+        long,
+        default_value_t = 100,
+        value_parser = clap::value_parser!(u64).range(1..=1000)
+    )]
+    pub limit: u64,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -200,7 +224,7 @@ pub struct ConfigureGoogleArgs {
 pub fn command_path(command: &Command) -> &'static str {
     match command {
         Command::Apps(apps) => match &apps.action {
-            AppsAction::List => "apps.list",
+            AppsAction::List(_) => "apps.list",
             AppsAction::Create(_) => "apps.create",
             AppsAction::CreateNative(_) => "apps.create-native",
             AppsAction::Delete(_) => "apps.delete",
@@ -208,15 +232,18 @@ pub fn command_path(command: &Command) -> &'static str {
             AppsAction::QuickSetup(_) => "apps.quick-setup",
         },
         Command::Users(users) => match &users.action {
-            UsersAction::List => "users.list",
+            UsersAction::List(_) => "users.list",
             UsersAction::Create(_) => "users.create",
             UsersAction::CreateAdmin(_) => "users.create-admin",
             UsersAction::GrantIamOwner(_) => "users.grant-iam-owner",
             UsersAction::QuickSetup => "users.quick-setup",
         },
         Command::Idps(idps) => match &idps.action {
-            IdpsAction::List => "idps.list",
+            IdpsAction::List(_) => "idps.list",
             IdpsAction::ConfigureGoogle(_) => "idps.configure-google",
+        },
+        Command::Projects(projects) => match &projects.action {
+            ProjectsAction::List(_) => "projects.list",
         },
         Command::Auth(auth) => match &auth.action {
             AuthAction::Login(_) => "auth.login",
@@ -255,7 +282,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(Command::Apps(AppsCommand {
-                action: AppsAction::List
+                action: AppsAction::List(ListArgs { limit: 100 })
             }))
         ));
     }
@@ -303,10 +330,10 @@ mod tests {
 
     #[test]
     fn command_paths_cover_every_variant() {
-        let cases: [(Command, &str); 17] = [
+        let cases: [(Command, &str); 18] = [
             (
                 Command::Apps(AppsCommand {
-                    action: AppsAction::List,
+                    action: AppsAction::List(ListArgs { limit: 100 }),
                 }),
                 "apps.list",
             ),
@@ -355,7 +382,7 @@ mod tests {
             ),
             (
                 Command::Users(UsersCommand {
-                    action: UsersAction::List,
+                    action: UsersAction::List(ListArgs { limit: 100 }),
                 }),
                 "users.list",
             ),
@@ -398,9 +425,15 @@ mod tests {
             ),
             (
                 Command::Idps(IdpsCommand {
-                    action: IdpsAction::List,
+                    action: IdpsAction::List(ListArgs { limit: 100 }),
                 }),
                 "idps.list",
+            ),
+            (
+                Command::Projects(ProjectsCommand {
+                    action: ProjectsAction::List(ListArgs { limit: 100 }),
+                }),
+                "projects.list",
             ),
             (
                 Command::Idps(IdpsCommand {

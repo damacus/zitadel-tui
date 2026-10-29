@@ -26,8 +26,8 @@ pub async fn execute_idps_command(
 
     let client = authenticated_client(args, config).await?;
     match &command.action {
-        IdpsAction::List => {
-            let idps = crate::ops::idps::list(&client)
+        IdpsAction::List(list) => {
+            let idps = crate::ops::idps::list(&client, list.limit)
                 .await
                 .map_err(CommandError::from)?;
             list_result(&idps, args.full)

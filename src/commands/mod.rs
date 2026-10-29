@@ -2,6 +2,7 @@ mod apps;
 mod auth;
 mod config;
 mod idps;
+mod projects;
 pub mod shared;
 mod users;
 
@@ -26,5 +27,8 @@ pub async fn execute_command(
             users::execute_users_command(users_command, args, config).await
         }
         Command::Idps(idps_command) => idps::execute_idps_command(idps_command, args, config).await,
+        Command::Projects(projects_command) => {
+            projects::execute_projects_command(projects_command, args, config).await
+        }
     }
 }

@@ -124,9 +124,9 @@ impl TuiConductor {
 
         self.project = project_id.clone();
         let (apps, users, idps) = tokio::join!(
-            ops::apps::list(&client, &project_id),
+            ops::apps::list(&client, &project_id, 100),
             ops::users::list(&client, 100),
-            ops::idps::list(&client)
+            ops::idps::list(&client, 100)
         );
         self.app_records = apps
             .map(|apps| apps.iter().map(Record::from).collect())

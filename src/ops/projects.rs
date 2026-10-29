@@ -2,9 +2,9 @@ use anyhow::{Context, Result};
 
 use crate::api::{client::ZitadelClient, models::Project};
 
-/// Lists all projects visible to the credential.
-pub async fn list(client: &ZitadelClient) -> Result<Vec<Project>> {
-    client.list_projects().await
+/// Lists projects visible to the credential, up to `limit`.
+pub async fn list(client: &ZitadelClient, limit: u64) -> Result<Vec<Project>> {
+    client.list_projects(limit).await
 }
 
 /// Id of the instance default project (first search result).

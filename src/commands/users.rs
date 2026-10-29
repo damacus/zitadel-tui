@@ -35,8 +35,8 @@ pub async fn execute_users_command(
 
     let client = authenticated_client(args, config).await?;
     match &command.action {
-        UsersAction::List => {
-            let users = crate::ops::users::list(&client, 100)
+        UsersAction::List(list) => {
+            let users = crate::ops::users::list(&client, list.limit)
                 .await
                 .map_err(CommandError::from)?;
             list_result(&users, args.full)

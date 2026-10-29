@@ -4,9 +4,9 @@ use crate::api::{client::ZitadelClient, models::Idp};
 
 use super::{resolve_idp, IdpSelector};
 
-/// Lists all configured identity providers.
-pub async fn list(client: &ZitadelClient) -> Result<Vec<Idp>> {
-    client.list_idps().await
+/// Lists configured identity providers, up to `limit`.
+pub async fn list(client: &ZitadelClient, limit: u64) -> Result<Vec<Idp>> {
+    client.list_idps(limit).await
 }
 
 /// Looks up a single identity provider by selector, erroring on zero or

@@ -9,8 +9,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use mockito::Server;
-use serde_json::Value;
+use mockito::{Matcher, Server};
+use serde_json::{json, Value};
 
 fn bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_zitadel-tui"))
@@ -578,4 +578,87 @@ fn idps_list_full_returns_raw_payload() {
         .unwrap()
         .clone();
     assert_eq!(envelope["result"].as_array().unwrap(), &raw);
+}
+
+const PROJECTS_LIST_BODY: &str = r#"{"result":[
+    {"id":"proj-1","name":"Platform","state":"PROJECT_STATE_ACTIVE","creationDate":"2026-01-01T00:00:00Z"}
+]}"#;
+
+#[test]
+fn projects_list_returns_summary_projection() {
+    let mut server = Server::new();
+    server
+        .mock("POST", "/management/v1/projects/_search")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(PROJECTS_LIST_BODY)
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .args(["--host", &server.url(), "--token", "test", "--config"])
+        .arg(&config)
+        .args(["projects", "list"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["command"], "projects.list");
+    assert_eq!(envelope["ok"], true);
+    let items = envelope["result"].as_array().expect("result is an array");
+    assert_eq!(items.len(), 1);
+    let keys: std::collections::BTreeSet<&str> = items[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(keys, ["id", "name", "state"].into_iter().collect());
+    assert_eq!(items[0]["name"], "Platform");
+    assert!(items[0].get("creationDate").is_none());
+}
+
+#[test]
+fn apps_list_limit_reaches_search_body() {
+    let mut server = Server::new();
+    let search = server
+        .mock("POST", "/management/v1/projects/proj-1/apps/_search")
+        .match_body(Matcher::PartialJson(json!({ "query": { "limit": 1 } })))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"result":[{"id":"app-1","name":"grafana"}]}"#)
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .args([
+            "--host",
+            &server.url(),
+            "--token",
+            "test",
+            "--project-id",
+            "proj-1",
+            "--config",
+        ])
+        .arg(&config)
+        .args(["apps", "list", "--limit", "1"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    search.assert();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(stdout_json(&output)["command"], "apps.list");
+}
+
+#[test]
+fn apps_list_limit_below_range_exits_2() {
+    let status = bin()
+        .args(["apps", "list", "--limit", "0"])
+        .status()
+        .expect("failed to spawn zitadel-tui");
+
+    assert_eq!(status.code(), Some(2));
 }

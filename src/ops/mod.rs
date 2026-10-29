@@ -159,7 +159,7 @@ pub async fn resolve_app(
     project_id: &str,
     selector: &AppSelector,
 ) -> Result<ResolveOutcome<App>> {
-    let apps = client.list_apps(project_id).await?;
+    let apps = client.list_apps(project_id, SELECTOR_LIST_LIMIT).await?;
     let matches: Vec<App> = apps
         .into_iter()
         .filter(|app| match selector {
@@ -179,7 +179,7 @@ pub async fn resolve_user(
     client: &ZitadelClient,
     selector: &UserSelector,
 ) -> Result<ResolveOutcome<User>> {
-    let users = client.list_users(USER_LIST_LIMIT).await?;
+    let users = client.list_users(SELECTOR_LIST_LIMIT).await?;
     let matches: Vec<User> = users
         .into_iter()
         .filter(|user| match selector {
@@ -208,7 +208,7 @@ pub async fn resolve_idp(
     client: &ZitadelClient,
     selector: &IdpSelector,
 ) -> Result<ResolveOutcome<Idp>> {
-    let idps = client.list_idps().await?;
+    let idps = client.list_idps(SELECTOR_LIST_LIMIT).await?;
     let matches: Vec<Idp> = idps
         .into_iter()
         .filter(|idp| match selector {
@@ -222,7 +222,9 @@ pub async fn resolve_idp(
     ))
 }
 
-const USER_LIST_LIMIT: u64 = 100;
+/// Page size for the search request backing selector resolution. The
+/// selector match itself is an exact client-side filter over this page.
+const SELECTOR_LIST_LIMIT: u64 = 100;
 
 fn into_outcome<T>(mut matches: Vec<T>, describe: impl Fn(&T) -> Value) -> ResolveOutcome<T> {
     match matches.len() {

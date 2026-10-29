@@ -92,8 +92,8 @@ pub async fn execute_apps_command(
             .map_err(CommandError::from)?;
 
     match &command.action {
-        AppsAction::List => {
-            let apps = crate::ops::apps::list(&client, &project_id)
+        AppsAction::List(list) => {
+            let apps = crate::ops::apps::list(&client, &project_id, list.limit)
                 .await
                 .map_err(CommandError::from)?;
             list_result(&apps, args.full)
