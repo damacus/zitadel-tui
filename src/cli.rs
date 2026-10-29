@@ -20,6 +20,11 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub config: Option<PathBuf>,
 
+    /// Emit each item's raw API payload instead of the compact summary
+    /// projection (list/get commands).
+    #[arg(long, global = true)]
+    pub full: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -463,6 +468,24 @@ mod tests {
     fn removed_json_flag_is_rejected() {
         // BREAKING: --json was removed; output is always the JSON envelope.
         assert!(Cli::try_parse_from(["zitadel-tui", "--json", "apps", "list"]).is_err());
+    }
+
+    #[test]
+    fn parses_full_flag() {
+        let cli = Cli::parse_from(["zitadel-tui", "--full", "apps", "list"]);
+        assert!(cli.full);
+    }
+
+    #[test]
+    fn full_flag_after_subcommand_is_accepted() {
+        let cli = Cli::parse_from(["zitadel-tui", "apps", "list", "--full"]);
+        assert!(cli.full);
+    }
+
+    #[test]
+    fn full_defaults_to_false() {
+        let cli = Cli::parse_from(["zitadel-tui", "apps", "list"]);
+        assert!(!cli.full);
     }
 
     #[test]

@@ -7,7 +7,7 @@ use crate::{
     error::{CommandError, ErrorKind},
 };
 
-use super::shared::authenticated_client;
+use super::shared::{authenticated_client, list_result};
 
 /// `apps create`/`quick-setup` template lookup failure — `NotFound` with
 /// the lookup echoed in `details`.
@@ -92,11 +92,12 @@ pub async fn execute_apps_command(
             .map_err(CommandError::from)?;
 
     match &command.action {
-        AppsAction::List => Ok(serde_json::to_value(
-            crate::ops::apps::list(&client, &project_id)
+        AppsAction::List => {
+            let apps = crate::ops::apps::list(&client, &project_id)
                 .await
-                .map_err(CommandError::from)?,
-        )?),
+                .map_err(CommandError::from)?;
+            list_result(&apps, args.full)
+        }
         AppsAction::Create(create) => {
             let templates = templates.expect("templates loaded for apps create");
             let (name, redirect_uris, public) = if let Some(template_name) = &create.template {

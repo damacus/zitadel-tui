@@ -17,12 +17,19 @@ fn bin() -> Command {
 }
 
 /// An empty TOML config so the real user config can never leak into a test.
+/// Unique per call (pid + nanos + counter) — parallel tests must never
+/// remove each other's file.
 fn empty_config() -> PathBuf {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let path = env::temp_dir().join(format!("zitadel-tui-contract-config-{unique}.toml"));
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let path = env::temp_dir().join(format!(
+        "zitadel-tui-contract-config-{}-{unique}-{seq}.toml",
+        std::process::id()
+    ));
     fs::write(&path, "").unwrap();
     path
 }
@@ -313,4 +320,262 @@ fn removed_once_flag_is_rejected() {
         .expect("failed to spawn zitadel-tui");
 
     assert_eq!(status.code(), Some(2));
+}
+
+/// Two-app fixture: an OIDC web app carrying fields the summary must drop
+/// (`oidcConfig`, `creationDate`) plus an API app exercising the
+/// api_config `client_id` fallback.
+const APPS_LIST_BODY: &str = r#"{"result":[
+    {"id":"app-1","name":"grafana","state":"APP_STATE_ACTIVE","creationDate":"2026-01-01T00:00:00Z","oidcConfig":{"clientId":"cid-1","authMethodType":"OIDC_AUTH_METHOD_TYPE_BASIC","appType":"OIDC_APP_TYPE_WEB","redirectUris":["https://grafana.example.com/cb"]}},
+    {"id":"app-2","name":"Management API","state":"APP_STATE_ACTIVE","apiConfig":{"clientId":"cid-2","authMethodType":"API_AUTH_METHOD_TYPE_PRIVATE_KEY_JWT"}}
+]}"#;
+
+fn mock_apps_search(server: &mut Server) {
+    server
+        .mock("POST", "/management/v1/projects/proj-1/apps/_search")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(APPS_LIST_BODY)
+        .create();
+}
+
+fn run_apps_list(server_url: &str, extra_args: &[&str]) -> std::process::Output {
+    let config = empty_config();
+    let output = bin()
+        .args([
+            "--host",
+            server_url,
+            "--token",
+            "test",
+            "--project-id",
+            "proj-1",
+            "--config",
+        ])
+        .arg(&config)
+        .args(["apps", "list"])
+        .args(extra_args)
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+    output
+}
+
+#[test]
+fn apps_list_defaults_to_summary_projection() {
+    let mut server = Server::new();
+    mock_apps_search(&mut server);
+
+    let output = run_apps_list(&server.url(), &[]);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["ok"], true);
+    let items = envelope["result"].as_array().expect("result is an array");
+    assert_eq!(items.len(), 2);
+
+    // Projection keys only — no oidcConfig, creationDate, or raw extras.
+    let keys: std::collections::BTreeSet<&str> = items[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        ["client_id", "id", "kind", "name", "redirect_uris", "state"]
+            .into_iter()
+            .collect()
+    );
+    assert_eq!(items[0]["id"], "app-1");
+    assert_eq!(items[0]["name"], "grafana");
+    assert_eq!(items[0]["client_id"], "cid-1");
+    assert_eq!(items[0]["kind"], "confidential");
+    assert_eq!(
+        items[0]["redirect_uris"],
+        serde_json::json!(["https://grafana.example.com/cb"])
+    );
+    assert_eq!(items[0]["state"], "APP_STATE_ACTIVE");
+
+    // api_config fallback: client_id survives, redirect_uris defaults to [].
+    assert_eq!(items[1]["client_id"], "cid-2");
+    assert_eq!(items[1]["kind"], "api");
+    assert_eq!(items[1]["redirect_uris"], serde_json::json!([]));
+}
+
+#[test]
+fn apps_list_full_returns_raw_payloads() {
+    let mut server = Server::new();
+    mock_apps_search(&mut server);
+
+    // Global flag after the subcommand — the position agents will use.
+    let output = run_apps_list(&server.url(), &["--full"]);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    let items = envelope["result"].as_array().expect("result is an array");
+    assert_eq!(items.len(), 2);
+    let raw: Vec<Value> = serde_json::from_str::<Value>(APPS_LIST_BODY).unwrap()["result"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(items[0], raw[0]);
+    assert_eq!(items[1], raw[1]);
+    assert!(items[0]["oidcConfig"].is_object());
+}
+
+const USERS_LIST_BODY: &str = r#"{"result":[
+    {"id":"user-1","userName":"admin","state":"USER_STATE_ACTIVE","preferredLoginName":"admin@example.com","human":{"profile":{"displayName":"Admin User"},"email":{"email":"admin@example.com"}},"creationDate":"2026-01-01T00:00:00Z"},
+    {"id":"user-2","userName":"service-account","state":"USER_STATE_ACTIVE","loginNames":["sa@example.com"],"machine":{"name":"cluster service account"}}
+]}"#;
+
+fn mock_users_search(server: &mut Server) {
+    server
+        .mock("POST", "/management/v1/users/_search")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(USERS_LIST_BODY)
+        .create();
+}
+
+fn run_users_list(server_url: &str, extra_args: &[&str]) -> std::process::Output {
+    let config = empty_config();
+    let output = bin()
+        .args(["--host", server_url, "--token", "test", "--config"])
+        .arg(&config)
+        .args(["users", "list"])
+        .args(extra_args)
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+    output
+}
+
+#[test]
+fn users_list_defaults_to_summary_projection() {
+    let mut server = Server::new();
+    mock_users_search(&mut server);
+
+    let output = run_users_list(&server.url(), &[]);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    let items = envelope["result"].as_array().expect("result is an array");
+    assert_eq!(items.len(), 2);
+
+    let keys: std::collections::BTreeSet<&str> = items[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "display_name",
+            "email",
+            "id",
+            "login_name",
+            "state",
+            "user_type",
+            "username"
+        ]
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(items[0]["username"], "admin");
+    assert_eq!(items[0]["login_name"], "admin@example.com");
+    assert_eq!(items[0]["display_name"], "Admin User");
+    assert_eq!(items[0]["email"], "admin@example.com");
+    assert_eq!(items[0]["user_type"], "human");
+
+    // Machine variant: user_type flips, login_name falls back to
+    // loginNames[0], display_name falls back to the machine name.
+    assert_eq!(items[1]["user_type"], "machine");
+    assert_eq!(items[1]["login_name"], "sa@example.com");
+    assert_eq!(items[1]["display_name"], "cluster service account");
+    assert!(items[1]["email"].is_null());
+}
+
+#[test]
+fn users_list_full_returns_raw_payloads() {
+    let mut server = Server::new();
+    mock_users_search(&mut server);
+
+    let output = run_users_list(&server.url(), &["--full"]);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    let items = envelope["result"].as_array().expect("result is an array");
+    let raw: Vec<Value> = serde_json::from_str::<Value>(USERS_LIST_BODY).unwrap()["result"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(*items, raw);
+    assert!(items[0]["human"].is_object());
+}
+
+const IDPS_LIST_BODY: &str = r#"{"result":[
+    {"id":"idp-1","name":"Google","state":"IDP_STATE_ACTIVE","type":"IDP_TYPE_GOOGLE","creationDate":"2026-01-01T00:00:00Z"}
+]}"#;
+
+#[test]
+fn idps_list_defaults_to_summary_projection() {
+    let mut server = Server::new();
+    server
+        .mock("POST", "/admin/v1/idps/_search")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(IDPS_LIST_BODY)
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .args(["--host", &server.url(), "--token", "test", "--config"])
+        .arg(&config)
+        .args(["idps", "list"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    let items = envelope["result"].as_array().expect("result is an array");
+    assert_eq!(items.len(), 1);
+    let keys: std::collections::BTreeSet<&str> = items[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(keys, ["id", "name", "state", "type"].into_iter().collect());
+    assert_eq!(items[0]["type"], "IDP_TYPE_GOOGLE");
+    assert!(items[0].get("creationDate").is_none());
+}
+
+#[test]
+fn idps_list_full_returns_raw_payload() {
+    let mut server = Server::new();
+    server
+        .mock("POST", "/admin/v1/idps/_search")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(IDPS_LIST_BODY)
+        .create();
+
+    let config = empty_config();
+    let output = bin()
+        .args(["--host", &server.url(), "--token", "test", "--config"])
+        .arg(&config)
+        .args(["idps", "list", "--full"])
+        .output()
+        .expect("failed to spawn zitadel-tui");
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(output.status.code(), Some(0));
+    let envelope = stdout_json(&output);
+    let raw: Vec<Value> = serde_json::from_str::<Value>(IDPS_LIST_BODY).unwrap()["result"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(envelope["result"].as_array().unwrap(), &raw);
 }

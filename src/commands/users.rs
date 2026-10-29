@@ -6,7 +6,7 @@ use crate::{
     error::CommandError,
 };
 
-use super::shared::authenticated_client;
+use super::shared::{authenticated_client, list_result};
 
 pub async fn execute_users_command(
     command: &UsersCommand,
@@ -35,11 +35,12 @@ pub async fn execute_users_command(
 
     let client = authenticated_client(args, config).await?;
     match &command.action {
-        UsersAction::List => Ok(serde_json::to_value(
-            crate::ops::users::list(&client, 100)
+        UsersAction::List => {
+            let users = crate::ops::users::list(&client, 100)
                 .await
-                .map_err(CommandError::from)?,
-        )?),
+                .map_err(CommandError::from)?;
+            list_result(&users, args.full)
+        }
         UsersAction::Create(create) => Ok(serde_json::to_value(
             crate::ops::users::create_human(
                 &client,

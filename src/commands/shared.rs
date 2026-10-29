@@ -1,5 +1,10 @@
+use serde_json::Value;
+
 use crate::{
-    api::client::ZitadelClient, auth::resolve_access_token, cli::Cli, config::AppConfig,
+    api::{client::ZitadelClient, models::Summarize},
+    auth::resolve_access_token,
+    cli::Cli,
+    config::AppConfig,
     error::CommandError,
 };
 
@@ -24,6 +29,20 @@ pub async fn authenticated_client(
     auth.ensure_api_credential()
         .map_err(|error| CommandError::auth(error.to_string()))?;
     ZitadelClient::new(host, auth.token).map_err(CommandError::from)
+}
+
+/// Serializes a fetched list for the envelope: compact summary projections
+/// by default, each model's verbatim `raw` API payload under `--full`.
+/// Single switch for every list command so the flag behaves consistently.
+pub fn list_result<T: Summarize>(items: &[T], full: bool) -> Result<Value, CommandError> {
+    if full {
+        return Ok(serde_json::to_value(
+            items.iter().map(T::raw).collect::<Vec<_>>(),
+        )?);
+    }
+    Ok(serde_json::to_value(
+        items.iter().map(T::summary).collect::<Vec<_>>(),
+    )?)
 }
 
 pub fn resolved_host(args: &Cli, config: &AppConfig) -> Result<String, CommandError> {
