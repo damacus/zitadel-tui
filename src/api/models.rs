@@ -317,6 +317,22 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn decodes_project() {
+        let project: Project = serde_json::from_value(json!({
+            "id": "project-1",
+            "name": "Platform",
+            "state": "PROJECT_STATE_ACTIVE"
+        }))
+        .expect("project decodes");
+
+        assert_eq!(project.id.as_deref(), Some("project-1"));
+        assert_eq!(project.name.as_deref(), Some("Platform"));
+        assert_eq!(project.state.as_deref(), Some("PROJECT_STATE_ACTIVE"));
+        // raw is attached by the client, not deserialized
+        assert_eq!(project.raw, Value::Null);
+    }
+
+    #[test]
     fn decodes_oidc_app_with_full_config() {
         let app: App = serde_json::from_value(json!({
             "id": "app-1",
