@@ -24,6 +24,30 @@ impl RawAttach for Project {
     }
 }
 
+/// Compact `Project` projection — the default envelope shape for
+/// `projects list`/`projects get`. All keys are always emitted (null when
+/// the field is absent) so agents can rely on a stable wire shape.
+#[derive(Clone, Debug, Serialize)]
+pub struct ProjectSummary {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub state: Option<String>,
+}
+
+impl Summarize for Project {
+    type Summary = ProjectSummary;
+    fn summary(&self) -> ProjectSummary {
+        ProjectSummary {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            state: self.state.clone(),
+        }
+    }
+    fn raw(&self) -> &Value {
+        &self.raw
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcConfig {
@@ -131,6 +155,52 @@ impl OidcConfig {
     }
 }
 
+/// Compact `App` projection — the default envelope shape for
+/// `apps list`/`apps get`. `kind` reuses [`App::kind`]; `client_id` comes
+/// from the OIDC config when present, else the API config; `redirect_uris`
+/// comes from the OIDC config and defaults to an empty list. All keys are
+/// always emitted (null/`[]` when absent) for a stable wire shape.
+#[derive(Clone, Debug, Serialize)]
+pub struct AppSummary {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub client_id: Option<String>,
+    pub kind: &'static str,
+    pub redirect_uris: Vec<String>,
+    pub state: Option<String>,
+}
+
+impl Summarize for App {
+    type Summary = AppSummary;
+    fn summary(&self) -> AppSummary {
+        let client_id = self
+            .oidc_config
+            .as_ref()
+            .and_then(|oidc| oidc.client_id.clone())
+            .or_else(|| {
+                self.api_config
+                    .as_ref()
+                    .and_then(|api| api.client_id.clone())
+            });
+        let redirect_uris = self
+            .oidc_config
+            .as_ref()
+            .and_then(|oidc| oidc.redirect_uris.clone())
+            .unwrap_or_default();
+        AppSummary {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            client_id,
+            kind: self.kind(),
+            redirect_uris,
+            state: self.state.clone(),
+        }
+    }
+    fn raw(&self) -> &Value {
+        &self.raw
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanProfile {
@@ -187,6 +257,69 @@ impl RawAttach for User {
     }
 }
 
+/// Compact `User` projection — the default envelope shape for
+/// `users list`/`users get`. `login_name` comes from `preferred_login_name`
+/// with `login_names[0]` as fallback; `display_name` uses the human profile
+/// for human users and the machine name for machine users; `email` is only
+/// present for human users. All keys are always emitted for a stable wire
+/// shape.
+#[derive(Clone, Debug, Serialize)]
+pub struct UserSummary {
+    pub id: Option<String>,
+    pub username: Option<String>,
+    pub login_name: Option<String>,
+    pub display_name: Option<String>,
+    pub email: Option<String>,
+    pub user_type: &'static str,
+    pub state: Option<String>,
+}
+
+impl User {
+    /// `"machine"` when the machine variant is present, else `"human"`.
+    pub fn user_type(&self) -> &'static str {
+        if self.machine.is_some() {
+            return "machine";
+        }
+        "human"
+    }
+}
+
+impl Summarize for User {
+    type Summary = UserSummary;
+    fn summary(&self) -> UserSummary {
+        let display_name = self
+            .human
+            .as_ref()
+            .and_then(|human| human.profile.as_ref())
+            .and_then(|profile| profile.display_name.clone())
+            .or_else(|| {
+                self.machine
+                    .as_ref()
+                    .and_then(|machine| machine.name.clone())
+            });
+        UserSummary {
+            id: self.id.clone(),
+            username: self.user_name.clone(),
+            login_name: self.preferred_login_name.clone().or_else(|| {
+                self.login_names
+                    .as_ref()
+                    .and_then(|names| names.first().cloned())
+            }),
+            display_name,
+            email: self
+                .human
+                .as_ref()
+                .and_then(|human| human.email.as_ref())
+                .and_then(|email| email.email.clone()),
+            user_type: self.user_type(),
+            state: self.state.clone(),
+        }
+    }
+    fn raw(&self) -> &Value {
+        &self.raw
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Idp {
@@ -205,6 +338,33 @@ pub struct Idp {
 impl RawAttach for Idp {
     fn set_raw(&mut self, raw: Value) {
         self.raw = raw;
+    }
+}
+
+/// Compact `Idp` projection — the default envelope shape for
+/// `idps list`/`idps get`. All keys are always emitted for a stable wire
+/// shape.
+#[derive(Clone, Debug, Serialize)]
+pub struct IdpSummary {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub r#type: Option<String>,
+    pub state: Option<String>,
+}
+
+impl Summarize for Idp {
+    type Summary = IdpSummary;
+    fn summary(&self) -> IdpSummary {
+        IdpSummary {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            r#type: self.r#type.clone(),
+            state: self.state.clone(),
+        }
+    }
+    fn raw(&self) -> &Value {
+        &self.raw
     }
 }
 
@@ -309,6 +469,15 @@ pub struct WhoAmIUser {
 /// `--full` projection.
 pub(crate) trait RawAttach {
     fn set_raw(&mut self, raw: Value);
+}
+
+/// A list/get model with two envelope shapes: a compact typed summary
+/// (the default output) and the retained raw API payload (emitted verbatim
+/// under `--full`).
+pub trait Summarize {
+    type Summary: Serialize;
+    fn summary(&self) -> Self::Summary;
+    fn raw(&self) -> &Value;
 }
 
 #[cfg(test)]
@@ -626,5 +795,170 @@ mod tests {
         assert_eq!(app.raw, payload);
         // raw is never serialized into the typed projection
         assert_eq!(serde_json::to_value(&app).unwrap(), json!({"id": "app-1"}));
+    }
+
+    #[test]
+    fn app_summary_projects_compact_shape() {
+        let app: App = serde_json::from_value(json!({
+            "id": "app-1",
+            "name": "grafana",
+            "state": "APP_STATE_ACTIVE",
+            "oidcConfig": {
+                "clientId": "cid-1",
+                "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC",
+                "appType": "OIDC_APP_TYPE_WEB",
+                "redirectUris": ["https://grafana.example.com/callback"]
+            },
+            "creationDate": "2026-01-01T00:00:00Z"
+        }))
+        .expect("app decodes");
+
+        assert_eq!(
+            serde_json::to_value(app.summary()).unwrap(),
+            json!({
+                "id": "app-1",
+                "name": "grafana",
+                "client_id": "cid-1",
+                "kind": "confidential",
+                "redirect_uris": ["https://grafana.example.com/callback"],
+                "state": "APP_STATE_ACTIVE"
+            })
+        );
+    }
+
+    #[test]
+    fn app_summary_uses_api_config_client_id_and_empty_redirects() {
+        let app: App = serde_json::from_value(json!({
+            "id": "app-2",
+            "name": "Management API",
+            "apiConfig": {
+                "clientId": "api-client-1",
+                "authMethodType": "API_AUTH_METHOD_TYPE_PRIVATE_KEY_JWT"
+            }
+        }))
+        .expect("api app decodes");
+
+        assert_eq!(
+            serde_json::to_value(app.summary()).unwrap(),
+            json!({
+                "id": "app-2",
+                "name": "Management API",
+                "client_id": "api-client-1",
+                "kind": "api",
+                "redirect_uris": [],
+                "state": null
+            })
+        );
+    }
+
+    #[test]
+    fn app_summary_minimal_app_has_stable_keys() {
+        let app: App = serde_json::from_value(json!({"id": "app-3"})).expect("minimal app");
+
+        assert_eq!(
+            serde_json::to_value(app.summary()).unwrap(),
+            json!({
+                "id": "app-3",
+                "name": null,
+                "client_id": null,
+                "kind": "unknown",
+                "redirect_uris": [],
+                "state": null
+            })
+        );
+    }
+
+    #[test]
+    fn user_summary_projects_human_user() {
+        let user: User = serde_json::from_value(json!({
+            "id": "user-1",
+            "userName": "admin",
+            "state": "USER_STATE_ACTIVE",
+            "preferredLoginName": "admin@example.com",
+            "human": {
+                "profile": {"displayName": "Admin User"},
+                "email": {"email": "admin@example.com"}
+            }
+        }))
+        .expect("human user decodes");
+
+        assert_eq!(
+            serde_json::to_value(user.summary()).unwrap(),
+            json!({
+                "id": "user-1",
+                "username": "admin",
+                "login_name": "admin@example.com",
+                "display_name": "Admin User",
+                "email": "admin@example.com",
+                "user_type": "human",
+                "state": "USER_STATE_ACTIVE"
+            })
+        );
+    }
+
+    #[test]
+    fn user_summary_projects_machine_user() {
+        let user: User = serde_json::from_value(json!({
+            "id": "user-2",
+            "userName": "service-account",
+            "state": "USER_STATE_ACTIVE",
+            "loginNames": ["sa@example.com"],
+            "machine": {"name": "cluster service account"}
+        }))
+        .expect("machine user decodes");
+
+        assert_eq!(
+            serde_json::to_value(user.summary()).unwrap(),
+            json!({
+                "id": "user-2",
+                "username": "service-account",
+                "login_name": "sa@example.com",
+                "display_name": "cluster service account",
+                "email": null,
+                "user_type": "machine",
+                "state": "USER_STATE_ACTIVE"
+            })
+        );
+    }
+
+    #[test]
+    fn idp_summary_projects_compact_shape() {
+        let idp: Idp = serde_json::from_value(json!({
+            "id": "idp-1",
+            "name": "Google",
+            "state": "IDP_STATE_ACTIVE",
+            "type": "IDP_TYPE_GOOGLE"
+        }))
+        .expect("idp decodes");
+
+        assert_eq!(
+            serde_json::to_value(idp.summary()).unwrap(),
+            json!({
+                "id": "idp-1",
+                "name": "Google",
+                "type": "IDP_TYPE_GOOGLE",
+                "state": "IDP_STATE_ACTIVE"
+            })
+        );
+    }
+
+    #[test]
+    fn project_summary_projects_compact_shape() {
+        let project: Project = serde_json::from_value(json!({
+            "id": "project-1",
+            "name": "Platform",
+            "state": "PROJECT_STATE_ACTIVE",
+            "creationDate": "2026-01-01T00:00:00Z"
+        }))
+        .expect("project decodes");
+
+        assert_eq!(
+            serde_json::to_value(project.summary()).unwrap(),
+            json!({
+                "id": "project-1",
+                "name": "Platform",
+                "state": "PROJECT_STATE_ACTIVE"
+            })
+        );
     }
 }
