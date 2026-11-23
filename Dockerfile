@@ -8,6 +8,7 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY docs/AGENT.md ./docs/AGENT.md
 
 RUN cargo build --release --locked
 
