@@ -6,13 +6,15 @@
   "minimumReleaseAge": "3 days",
   "packageRules": [
     {
-      "description": "Automerge low-risk Cargo crate patch updates after CI passes",
+      "description": "Automerge stable Cargo crate minor and patch updates after CI passes",
       "matchManagers": [
         "cargo"
       ],
       "matchUpdateTypes": [
+        "minor",
         "patch"
       ],
+      "matchCurrentVersion": "!/^0/",
       "automerge": true,
       "automergeType": "pr",
       "platformAutomerge": false
