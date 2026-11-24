@@ -2,7 +2,10 @@ use std::io;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
+        MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -10,17 +13,17 @@ use ratatui::backend::CrosstermBackend;
 
 use crate::{
     conductor::TuiConductor,
-    tui::{draw, App, AppCommand},
+    tui::{draw, App, AppCommand, CanvasMode, FieldKind, Focus, Hits, Target},
 };
 
 pub async fn run_tui(mut conductor: TuiConductor) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let terminal = ratatui::Terminal::new(CrosstermBackend::new(stdout))?;
     let result = run_app(terminal, &mut conductor).await;
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
+    execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
     result
 }
 
@@ -30,14 +33,21 @@ async fn run_app(
 ) -> Result<()> {
     let mut app = App::from_bootstrap(conductor.bootstrap_state());
 
+    let mut hits = Hits::new();
     loop {
-        terminal.draw(|frame| draw(frame, &app))?;
-
-        let Some(key_code) = read_key_press(std::time::Duration::from_millis(100))? else {
-            continue;
+        terminal.draw(|frame| draw(frame, &app, &mut hits))?;
+        let command = match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                if key.modifiers.contains(event::KeyModifiers::CONTROL)
+                    && key.code == KeyCode::Char('c')
+                {
+                    break;
+                }
+                app.handle_key(key.code)
+            }
+            Event::Mouse(mouse) => mouse_command(&mut app, &hits, mouse),
+            _ => continue,
         };
-
-        let command = app.handle_key(key_code);
         if !handle_app_command(command, &mut app, conductor).await? {
             break;
         }
@@ -46,20 +56,54 @@ async fn run_app(
     Ok(())
 }
 
-fn read_key_press(timeout: std::time::Duration) -> Result<Option<KeyCode>> {
-    if !event::poll(timeout)? {
-        return Ok(None);
+fn mouse_command(app: &mut App, hits: &Hits, event: event::MouseEvent) -> AppCommand {
+    match event.kind {
+        MouseEventKind::ScrollDown => return app.handle_key(KeyCode::Down),
+        MouseEventKind::ScrollUp => return app.handle_key(KeyCode::Up),
+        MouseEventKind::Down(MouseButton::Left) => {}
+        _ => return AppCommand::Noop,
     }
-
-    let Event::Key(key) = event::read()? else {
-        return Ok(None);
+    let Some((_, target)) = hits
+        .iter()
+        .find(|(rect, _)| rect.contains((event.column, event.row).into()))
+    else {
+        return AppCommand::Noop;
     };
-
-    if key.kind != KeyEventKind::Press {
-        return Ok(None);
+    match *target {
+        Target::Section(i) => {
+            app.selected_resource = i;
+            app.focus = Focus::Records;
+            app.cursor = 0;
+            app.expanded = None;
+            app.filter.clear();
+            app.filtering = false;
+        }
+        Target::Entry(i) => {
+            app.focus = Focus::Records;
+            app.cursor = i;
+            app.filtering = false;
+            return app.handle_key(KeyCode::Enter);
+        }
+        Target::Field(i) => {
+            if let CanvasMode::Setup(f) | CanvasMode::EditForm(f) = &mut app.canvas_mode {
+                f.selected_field = i;
+                if matches!(
+                    f.fields[i].kind,
+                    FieldKind::Checkbox | FieldKind::Choice(_) | FieldKind::Toggle
+                ) {
+                    return app.handle_key(KeyCode::Char(' '));
+                }
+            }
+        }
+        Target::Filter => {
+            if !app.filtering {
+                return app.handle_key(KeyCode::Char('/'));
+            }
+        }
+        Target::Submit => return app.handle_key(KeyCode::Enter),
+        Target::Back => return app.handle_key(KeyCode::Esc),
     }
-
-    Ok(Some(key.code))
+    AppCommand::Noop
 }
 
 async fn handle_app_command(

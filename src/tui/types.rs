@@ -1,7 +1,6 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Focus {
     Resources,
-    Actions,
     Form,
     Records,
 }
@@ -16,16 +15,8 @@ pub enum ResourceKind {
 }
 
 #[derive(Clone, Debug)]
-pub struct Resource {
-    pub kind: ResourceKind,
-    pub name: &'static str,
-    pub count: String,
-}
-
-#[derive(Clone, Debug)]
 pub struct Action {
     pub label: &'static str,
-    pub hotkey: &'static str,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -36,6 +27,7 @@ pub struct Record {
     pub summary: String,
     pub detail: String,
     pub changed_at: String,
+    pub redirect_uris: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -48,6 +40,7 @@ pub struct TuiBootstrap {
     pub app_records: Vec<Record>,
     pub user_records: Vec<Record>,
     pub idp_records: Vec<Record>,
+    pub idp_error: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,6 +56,10 @@ pub enum CanvasMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PendingAction {
     CreateApplication,
+    AddRedirectUris {
+        app_id: String,
+        name: String,
+    },
     QuickSetupApplications,
     DeleteApplication {
         app_id: String,
@@ -143,74 +140,66 @@ pub enum AppCommand {
 
 #[derive(Debug)]
 pub struct App {
+    pub cursor: usize,
+    pub expanded: Option<usize>,
+    pub filter: String,
+    pub filtering: bool,
+    pub scroll: usize,
     pub focus: Focus,
-    pub show_inspector: bool,
     pub host: String,
     pub project: String,
     pub auth_label: String,
     pub templates_path: Option<String>,
     pub setup_required: bool,
-    pub resources: Vec<Resource>,
     pub selected_resource: usize,
-    pub selected_action: usize,
     pub app_records: Vec<Record>,
     pub user_records: Vec<Record>,
     pub idp_records: Vec<Record>,
-    pub selected_record: usize,
+    pub idp_error: Option<String>,
     pub canvas_mode: CanvasMode,
 }
 
-pub const APPLICATION_ACTIONS: [Action; 4] = [
+pub const APPLICATION_ACTIONS: [Action; 5] = [
     Action {
         label: "Create application",
-        hotkey: "[enter]",
     },
     Action {
         label: "Regenerate secret",
-        hotkey: "[enter]",
     },
     Action {
         label: "Delete selected",
-        hotkey: "[enter]",
     },
     Action {
         label: "Quick setup",
-        hotkey: "[enter]",
+    },
+    Action {
+        label: "Add redirect URIs",
     },
 ];
 
 pub const USER_ACTIONS: [Action; 4] = [
     Action {
         label: "Create user",
-        hotkey: "[enter]",
     },
     Action {
         label: "Create admin",
-        hotkey: "[enter]",
     },
     Action {
         label: "Grant IAM_OWNER",
-        hotkey: "[enter]",
     },
     Action {
         label: "Quick setup",
-        hotkey: "[enter]",
     },
 ];
 
 pub const IDP_ACTIONS: [Action; 1] = [Action {
     label: "Configure Google",
-    hotkey: "[enter]",
 }];
 
-pub const AUTH_ACTIONS: [Action; 1] = [Action {
-    label: "Run setup",
-    hotkey: "[enter]",
-}];
+pub const AUTH_ACTIONS: [Action; 1] = [Action { label: "Run setup" }];
 
 pub const CONFIG_ACTIONS: [Action; 1] = [Action {
     label: "Edit config",
-    hotkey: "[enter]",
 }];
 
 pub fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {

@@ -102,6 +102,28 @@ impl TuiConductor {
                         })
                         .collect(),
                 }),
+                4 => match selected_record {
+                    Some(record) => CanvasMode::EditForm(FormState {
+                        title: "Add redirect URIs".to_string(),
+                        description: format!(
+                            "Add callback URLs to {}. Existing URLs are retained.",
+                            record.name
+                        ),
+                        submit_label: "[Enter] add redirect URIs".to_string(),
+                        selected_field: 0,
+                        pending: PendingAction::AddRedirectUris {
+                            app_id: record.id.clone(),
+                            name: record.name.clone(),
+                        },
+                        fields: vec![text_field(
+                            "redirect_uris",
+                            "Redirect URIs",
+                            "",
+                            "Comma-separated callback URLs to add",
+                        )],
+                    }),
+                    None => error_mode("No application selected", "Choose an application first."),
+                },
                 _ => CanvasMode::Browse,
             },
             ResourceKind::Users => match action_index {

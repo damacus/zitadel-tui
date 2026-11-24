@@ -21,6 +21,34 @@ impl TuiConductor {
     pub async fn submit_form(&mut self, form: &FormState) -> CanvasMode {
         match &form.pending {
             PendingAction::CreateApplication => self.create_application(form).await,
+            PendingAction::AddRedirectUris { app_id, name } => {
+                let Some(client) = self.client.as_ref() else {
+                    return error_mode("Authentication required", "Run setup first.");
+                };
+                let uris = split_csv(&form_value(form, "redirect_uris"));
+                match client.add_redirect_uris(&self.project, app_id, &uris).await {
+                    Ok(result) => {
+                        let changed = result
+                            .get("changed")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        self.refresh_runtime().await;
+                        CanvasMode::Success(MessageState {
+                            title: "Redirect URIs".to_string(),
+                            lines: vec![format!(
+                                "{}: {}",
+                                name,
+                                if changed {
+                                    "redirect URIs added and verified."
+                                } else {
+                                    "all redirect URIs already exist."
+                                }
+                            )],
+                        })
+                    }
+                    Err(error) => error_mode("Failed to add redirect URIs", &format!("{error:#}")),
+                }
+            }
             PendingAction::QuickSetupApplications => self.quick_setup_apps(form).await,
             PendingAction::CreateUser => self.create_user(form).await,
             PendingAction::CreateAdminUser => self.create_admin_user(form).await,
@@ -95,6 +123,7 @@ impl TuiConductor {
                 None => error_mode("Authentication required", "Run setup first."),
             },
             PendingAction::CreateApplication
+            | PendingAction::AddRedirectUris { .. }
             | PendingAction::QuickSetupApplications
             | PendingAction::CreateUser
             | PendingAction::CreateAdminUser

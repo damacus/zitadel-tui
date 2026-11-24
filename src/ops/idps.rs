@@ -71,7 +71,7 @@ mod tests {
     async fn get_errors_with_ambiguous_text() {
         let mut server = Server::new_async().await;
         server
-            .mock("POST", "/admin/v1/idps/_search")
+            .mock("POST", "/management/v1/idps/templates/_search")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
