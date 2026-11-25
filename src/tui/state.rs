@@ -21,6 +21,8 @@ impl App {
         };
 
         Self {
+            initial_values: Self::field_values(&canvas_mode),
+            overlay: None,
             cursor: 0,
             expanded: None,
             filter: String::new(),
@@ -31,6 +33,13 @@ impl App {
             } else {
                 Focus::Resources
             },
+            organization: bootstrap.organization,
+            organizations: bootstrap.organizations,
+            projects: bootstrap.projects,
+            org_error: bootstrap.org_error,
+            project_error: bootstrap.project_error,
+            app_error: bootstrap.app_error,
+            user_error: bootstrap.user_error,
             host: bootstrap.host,
             project: bootstrap.project,
             auth_label: bootstrap.auth_label,
@@ -46,6 +55,13 @@ impl App {
     }
 
     pub fn sync_runtime(&mut self, bootstrap: TuiBootstrap) {
+        self.organization = bootstrap.organization;
+        self.organizations = bootstrap.organizations;
+        self.projects = bootstrap.projects;
+        self.org_error = bootstrap.org_error;
+        self.project_error = bootstrap.project_error;
+        self.app_error = bootstrap.app_error;
+        self.user_error = bootstrap.user_error;
         self.host = bootstrap.host;
         self.project = bootstrap.project;
         self.auth_label = bootstrap.auth_label;
@@ -55,6 +71,10 @@ impl App {
             .expanded
             .and_then(|i| self.active_records().get(i))
             .map(|r| r.id.clone());
+        let cursor_id = match self.entries().get(self.cursor) {
+            Some(super::directory::Entry::Record(i)) => Some(self.active_records()[*i].id.clone()),
+            _ => None,
+        };
         let old_cursor = self.cursor;
         self.app_records = bootstrap.app_records;
         self.user_records = bootstrap.user_records;
@@ -63,7 +83,8 @@ impl App {
         self.expanded = target
             .as_ref()
             .and_then(|id| self.active_records().iter().position(|r| &r.id == id));
-        self.cursor = old_cursor.min(self.entries().len().saturating_sub(1));
+        let entries = self.entries();
+        self.cursor=cursor_id.and_then(|id|entries.iter().position(|entry| matches!(entry,super::directory::Entry::Record(i) if self.active_records()[*i].id==id))).unwrap_or_else(||old_cursor.min(entries.len().saturating_sub(1)));
     }
 
     pub fn active_resource(&self) -> ResourceKind {
@@ -95,19 +116,32 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyCode) -> AppCommand {
+        if self.overlay.is_some() {
+            return self.overlay_key(key);
+        }
+        if !self.setup_required {
+            match key {
+                KeyCode::F(n @ 1..=4) => {
+                    return self.navigate(super::Destination::Section(usize::from(n - 1)))
+                }
+                KeyCode::F(5) if matches!(self.canvas_mode, CanvasMode::Browse) => {
+                    return AppCommand::Refresh
+                }
+                KeyCode::F(6) => return self.open_picker(super::Scope::Organisation),
+                KeyCode::F(7) => return self.open_picker(super::Scope::Project),
+                _ => {}
+            }
+        }
         if self.is_form_editing() {
             match key {
-                KeyCode::Esc => {
-                    self.handle_escape();
-                    AppCommand::Noop
-                }
+                KeyCode::Esc => self.navigate(super::Destination::Back),
                 KeyCode::Enter => self.handle_enter(),
                 KeyCode::Backspace => {
                     self.form_backspace();
                     AppCommand::Noop
                 }
                 KeyCode::Char(' ') => {
-                    self.form_toggle_or_cycle(true);
+                    self.form_insert_char(' ');
                     AppCommand::Noop
                 }
                 KeyCode::Char(ch) => {
@@ -163,8 +197,18 @@ impl App {
         }
     }
 
+    pub fn finish_submission(&mut self, next: CanvasMode) {
+        match next {
+            CanvasMode::Error(error) => {
+                self.overlay = Some(super::Overlay::SubmissionError(error, 0))
+            }
+            mode => self.set_canvas_mode(mode),
+        }
+    }
+
     pub fn set_canvas_mode(&mut self, canvas_mode: CanvasMode) {
         self.scroll = 0;
+        self.initial_values = Self::field_values(&canvas_mode);
         self.canvas_mode = canvas_mode;
         self.focus = if matches!(self.canvas_mode, CanvasMode::Browse) {
             Focus::Resources
@@ -176,6 +220,13 @@ impl App {
     pub fn reset_to_browse(&mut self) {
         self.canvas_mode = if self.setup_required {
             CanvasMode::Setup(default_setup_form(&TuiBootstrap {
+                organization: self.organization.clone(),
+                organizations: self.organizations.clone(),
+                projects: self.projects.clone(),
+                org_error: self.org_error.clone(),
+                project_error: self.project_error.clone(),
+                app_error: self.app_error.clone(),
+                user_error: self.user_error.clone(),
                 host: self.host.clone(),
                 project: self.project.clone(),
                 auth_label: self.auth_label.clone(),
@@ -225,7 +276,7 @@ impl App {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
                     let cursor = field.cursor.min(field.value.len());
                     field.value.insert(cursor, ch);
-                    field.cursor = cursor + 1;
+                    field.cursor = cursor + ch.len_utf8();
                 }
                 super::types::FieldKind::Toggle | super::types::FieldKind::Checkbox => {
                     if ch == ' ' {
@@ -247,8 +298,12 @@ impl App {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
                     let cursor = field.cursor.min(field.value.len());
                     if cursor > 0 {
-                        field.value.remove(cursor - 1);
-                        field.cursor = cursor - 1;
+                        let prev = field.value[..cursor]
+                            .char_indices()
+                            .next_back()
+                            .map_or(0, |(i, _)| i);
+                        field.value.remove(prev);
+                        field.cursor = prev;
                     }
                 }
                 super::types::FieldKind::Toggle
@@ -262,7 +317,10 @@ impl App {
         if let Some(field) = self.active_form_field_mut() {
             match field.kind {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
-                    field.cursor = field.cursor.saturating_sub(1);
+                    field.cursor = field.value[..field.cursor.min(field.value.len())]
+                        .char_indices()
+                        .next_back()
+                        .map_or(0, |(i, _)| i);
                 }
                 _ => {}
             }
@@ -274,7 +332,10 @@ impl App {
             match field.kind {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
                     let len = field.value.len();
-                    field.cursor = (field.cursor + 1).min(len);
+                    field.cursor += field.value[field.cursor.min(len)..]
+                        .chars()
+                        .next()
+                        .map_or(0, char::len_utf8);
                 }
                 _ => {}
             }

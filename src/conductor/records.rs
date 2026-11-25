@@ -16,7 +16,14 @@ impl From<&App> for Record {
                 .map(|uris| uris.len())
                 .unwrap_or(0);
 
-            (format!("{redirect_count} redirects"), client_id)
+            (
+                if redirect_count == 1 {
+                    "1 redirect".to_owned()
+                } else {
+                    format!("{redirect_count} redirects")
+                },
+                client_id,
+            )
         } else if let Some(api_config) = &app.api_config {
             let client_id = api_config
                 .client_id
@@ -115,9 +122,16 @@ impl From<&Idp> for Record {
                 .unwrap_or_else(|| "unnamed-idp".to_string()),
             kind: idp.state.clone().unwrap_or_else(|| "unknown".to_string()),
             summary: idp.r#type.clone().unwrap_or_else(|| "provider".to_string()),
-            detail: "manual credentials".to_string(),
+            detail: crate::api::providers::owner(&idp.raw)
+                .unwrap_or("Unknown scope")
+                .into(),
             redirect_uris: vec![],
-            changed_at: "configured".to_string(),
+            changed_at: idp
+                .raw
+                .pointer("/details/changeDate")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .into(),
         }
     }
 }

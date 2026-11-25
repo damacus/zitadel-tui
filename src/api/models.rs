@@ -447,21 +447,36 @@ impl RawAttach for WhoAmI {
     }
 }
 
-/// `/auth/v1/users/me` user payload. Zitadel has returned the id as either
-/// `userId` or `id`, and the login name as `preferredLoginName`, `userName`,
-/// or `loginName`; the aliases cover every observed shape.
+/// Normalised login identity used by the headless commands and directory bootstrap.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", from = "WhoAmIUserResponse")]
 pub struct WhoAmIUser {
-    #[serde(default, alias = "id", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
-    #[serde(
-        default,
-        alias = "userName",
-        alias = "loginName",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub preferred_login_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WhoAmIUserResponse {
+    user_id: Option<String>,
+    id: Option<String>,
+    preferred_login_name: Option<String>,
+    user_name: Option<String>,
+    login_name: Option<String>,
+}
+
+impl From<WhoAmIUserResponse> for WhoAmIUser {
+    fn from(response: WhoAmIUserResponse) -> Self {
+        Self {
+            user_id: response.user_id.or(response.id),
+            preferred_login_name: response
+                .preferred_login_name
+                .or(response.user_name)
+                .or(response.login_name),
+        }
+    }
 }
 
 /// Lets the client attach the original response body to a decoded model.
@@ -742,6 +757,15 @@ mod tests {
         assert_eq!(
             login_name.user.preferred_login_name.as_deref(),
             Some("sa-login")
+        );
+
+        let full: WhoAmI = serde_json::from_value(
+            json!({"user":{"id":"u","userName":"admin","preferredLoginName":"admin@team"}}),
+        )
+        .unwrap();
+        assert_eq!(
+            full.user.preferred_login_name.as_deref(),
+            Some("admin@team")
         );
 
         let missing_user: WhoAmI = serde_json::from_value(json!({})).expect("empty whoami");

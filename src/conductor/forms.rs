@@ -11,6 +11,12 @@ impl TuiConductor {
         action_index: usize,
         selected_record: Option<&Record>,
     ) -> CanvasMode {
+        if resource == ResourceKind::Applications && self.project.is_empty() {
+            return error_mode(
+                "Select a project",
+                "Choose a project in the header to manage applications.",
+            );
+        }
         match resource {
             ResourceKind::Applications => match action_index {
                 0 => CanvasMode::EditForm(FormState {
@@ -104,26 +110,67 @@ impl TuiConductor {
                 }),
                 4 => match selected_record {
                     Some(record) => CanvasMode::EditForm(FormState {
-                        title: "Add redirect URIs".to_string(),
-                        description: format!(
-                            "Add callback URLs to {}. Existing URLs are retained.",
-                            record.name
-                        ),
-                        submit_label: "[Enter] add redirect URIs".to_string(),
+                        title: "Edit redirect URIs".to_string(),
+                        description: format!("Edit the callback URLs for {}.", record.name),
+                        submit_label: "[Enter] review changes".to_string(),
                         selected_field: 0,
-                        pending: PendingAction::AddRedirectUris {
+                        pending: PendingAction::EditRedirectUris {
+                            original: record.redirect_uris.clone(),
                             app_id: record.id.clone(),
                             name: record.name.clone(),
                         },
                         fields: vec![text_field(
                             "redirect_uris",
                             "Redirect URIs",
-                            "",
-                            "Comma-separated callback URLs to add",
+                            &record.redirect_uris.join(", "),
+                            "Comma-separated callback URLs. Remove a URL to stop accepting it.",
                         )],
                     }),
                     None => error_mode("No application selected", "Choose an application first."),
                 },
+                6 => match selected_record {
+                    Some(record) => CanvasMode::EditForm(FormState {
+                        title: "Rename application".into(),
+                        description: format!(
+                            "Project {} · application {}",
+                            self.project, record.id
+                        ),
+                        submit_label: "[Enter] save name".into(),
+                        selected_field: 0,
+                        pending: PendingAction::RenameApplication {
+                            app_id: record.id.clone(),
+                        },
+                        fields: vec![text_field(
+                            "name",
+                            "Name",
+                            &record.name,
+                            "Application display name",
+                        )],
+                    }),
+                    None => error_mode("No application selected", "Choose an application first."),
+                },
+                5 => CanvasMode::EditForm(FormState {
+                    title: "Create native application".into(),
+                    description: format!("Project {}", self.project),
+                    submit_label: "[Enter] create native application".into(),
+                    selected_field: 0,
+                    pending: PendingAction::CreateNative,
+                    fields: vec![
+                        text_field("name", "Name", "", "Application name"),
+                        text_field(
+                            "redirect_uris",
+                            "Redirect URIs",
+                            "",
+                            "Optional comma-separated callback URLs",
+                        ),
+                        toggle_field(
+                            "device_code",
+                            "Device code",
+                            false,
+                            "Allow sign-in on a separate device",
+                        ),
+                    ],
+                }),
                 _ => CanvasMode::Browse,
             },
             ResourceKind::Users => match action_index {
@@ -199,13 +246,28 @@ impl TuiConductor {
                 }),
                 _ => CanvasMode::Browse,
             },
-            ResourceKind::Idps => CanvasMode::EditForm(FormState {
-                title: "Configure Google IDP".to_string(),
-                description: "Configure Google with manual credentials only.".to_string(),
-                submit_label: "[Enter] configure Google".to_string(),
+            ResourceKind::Idps if action_index == 0 => CanvasMode::EditForm(FormState {
+                title: "Add Google provider".into(),
+                description: "Create a Google provider in the chosen scope.".into(),
+                submit_label: "[Enter] add Google provider".into(),
                 selected_field: 0,
                 pending: PendingAction::ConfigureGoogleIdp,
                 fields: vec![
+                    choice_field(
+                        "scope",
+                        "Scope",
+                        "Choose scope",
+                        if self.organization.is_some() {
+                            vec![
+                                "Choose scope".into(),
+                                "Organization".into(),
+                                "Instance".into(),
+                            ]
+                        } else {
+                            vec!["Choose scope".into(), "Instance".into()]
+                        },
+                        "Choose the provider owner",
+                    ),
                     text_field("name", "Name", "Google", "Display name"),
                     text_field("client_id", "Client ID", "", "Google OAuth client ID"),
                     secret_field(
@@ -216,6 +278,9 @@ impl TuiConductor {
                     ),
                 ],
             }),
+            ResourceKind::Idps => {
+                error_mode("Edit Google provider", "Select a Google provider first.")
+            }
             ResourceKind::Auth => CanvasMode::Setup(FormState {
                 title: "Run setup".to_string(),
                 description: "Validate and save auth, host, project, and templates path."
@@ -228,7 +293,7 @@ impl TuiConductor {
                     text_field(
                         "project",
                         "Project",
-                        &self.project,
+                        self.config.project_id.as_deref().unwrap_or_default(),
                         "Optional default project",
                     ),
                     choice_field(
@@ -239,12 +304,8 @@ impl TuiConductor {
                         } else {
                             "PAT"
                         },
-                        vec![
-                            "PAT".to_string(),
-                            "Service account".to_string(),
-                            "OAuth device (placeholder)".to_string(),
-                        ],
-                        "PAT and service account are live in this slice.",
+                        vec!["PAT".to_string(), "Service account".to_string()],
+                        "Use a service account key or personal access token.",
                     ),
                     secret_field(
                         "token",
@@ -285,7 +346,12 @@ impl TuiConductor {
                     pending: PendingAction::SaveConfig,
                     fields: vec![
                         text_field("host", "Host", &self.host, "Saved Zitadel URL"),
-                        text_field("project", "Project", &self.project, "Saved default project"),
+                        text_field(
+                            "project",
+                            "Project",
+                            self.config.project_id.as_deref().unwrap_or_default(),
+                            "Saved default project",
+                        ),
                         text_field(
                             "templates_path",
                             "Templates path",

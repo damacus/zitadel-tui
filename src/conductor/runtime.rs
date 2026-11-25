@@ -1,11 +1,6 @@
 use reqwest::Client as HttpClient;
 
-use crate::{
-    api::client::ZitadelClient,
-    auth::resolve_access_token,
-    ops,
-    tui::{Record, TuiBootstrap},
-};
+use crate::{api::client::ZitadelClient, auth::resolve_access_token, tui::TuiBootstrap};
 
 use super::TuiConductor;
 
@@ -29,6 +24,13 @@ impl TuiConductor {
             app_records: vec![],
             user_records: vec![],
             idp_records: vec![],
+            organization: Default::default(),
+            organizations: Default::default(),
+            projects: Default::default(),
+            org_error: Default::default(),
+            project_error: Default::default(),
+            app_error: Default::default(),
+            user_error: Default::default(),
             idp_error: None,
         };
         conductor.refresh_runtime().await;
@@ -49,18 +51,19 @@ impl TuiConductor {
             app_records: self.app_records.clone(),
             user_records: self.user_records.clone(),
             idp_records: self.idp_records.clone(),
+            organization: self.organization.clone(),
+            organizations: self.organizations.clone(),
+            projects: self.projects.clone(),
+            org_error: self.org_error.clone(),
+            project_error: self.project_error.clone(),
+            app_error: self.app_error.clone(),
+            user_error: self.user_error.clone(),
             idp_error: self.idp_error.clone(),
         }
     }
 
     pub async fn refresh_runtime(&mut self) {
-        self.project = self
-            .cli
-            .project_id
-            .clone()
-            .or_else(|| self.config.project_id.clone())
-            .unwrap_or_else(|| "default".to_string());
-
+        self.clear_directory();
         let has_credential = self.cli.token.is_some()
             || self.config.pat.is_some()
             || self.config.service_account_file.is_some()
@@ -114,35 +117,6 @@ impl TuiConductor {
             return;
         };
 
-        let (project, users, idps) = tokio::join!(
-            ops::resolve_project_id(
-                &client,
-                self.cli.project_id.clone(),
-                self.config.project_id.clone()
-            ),
-            ops::users::list(&client, 100),
-            ops::idps::list(&client, 100)
-        );
-        self.idp_error = idps
-            .as_ref()
-            .err()
-            .map(|error| format!("Could not load identity providers: {error}"));
-        let apps = match project {
-            Ok(id) => {
-                self.project = id;
-                ops::apps::list(&client, &self.project, 100).await
-            }
-            Err(error) => Err(error),
-        };
-        self.app_records = apps
-            .map(|apps| apps.iter().map(Record::from).collect())
-            .unwrap_or_default();
-        self.user_records = users
-            .map(|users| users.iter().map(Record::from).collect())
-            .unwrap_or_default();
-        self.idp_records = idps
-            .map(|idps| idps.iter().map(Record::from).collect())
-            .unwrap_or_default();
-        self.client = Some(client);
+        self.load_directory(client).await;
     }
 }

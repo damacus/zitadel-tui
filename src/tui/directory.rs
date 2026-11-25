@@ -35,13 +35,27 @@ impl App {
                 if record.kind == "confidential" {
                     entries.push(Entry::Action(kind, 1, Some(i)))
                 }
+                entries.push(Entry::Action(kind, 6, Some(i)));
                 entries.push(Entry::Action(kind, 2, Some(i)));
+            } else if kind == Idps
+                && matches!(
+                    record.summary.as_str(),
+                    "PROVIDER_TYPE_GOOGLE" | "IDP_TYPE_GOOGLE" | "google"
+                )
+            {
+                entries.push(Entry::Action(kind, 1, Some(i)));
             } else if kind == Users {
-                entries.push(Entry::Action(kind, 2, Some(i)));
+                entries.extend([4, 5, 6, 2].map(|action| Entry::Action(kind, action, Some(i))));
+                if record.kind.ends_with("USER_STATE_LOCKED") {
+                    entries.push(Entry::Action(kind, 7, Some(i)));
+                }
+                if !record.kind.ends_with("USER_STATE_INACTIVE") {
+                    entries.push(Entry::Action(kind, 8, Some(i)));
+                }
             }
         }
         let general: &[usize] = match kind {
-            Applications => &[0, 3],
+            Applications => &[0, 5, 3],
             Users => &[0, 1, 3],
             _ => &[0],
         };
@@ -75,6 +89,13 @@ impl App {
                 self.focus = Focus::Records;
                 self.expanded = None;
             }
+            KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l') if rail => {
+                let forward = matches!(key, KeyCode::Right | KeyCode::Char('l'));
+                self.selected_resource = (self.selected_resource + if forward { 1 } else { 3 }) % 4;
+                self.cursor = 0;
+                self.expanded = None;
+                self.filter.clear();
+            }
             KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') => {
                 let down = matches!(key, KeyCode::Down | KeyCode::Char('j'));
                 let (index, len) = if rail {
@@ -93,9 +114,7 @@ impl App {
                     self.filter.clear();
                 }
             }
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') if rail => {
-                self.focus = Focus::Records
-            }
+            KeyCode::Enter if rail => self.focus = Focus::Records,
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                 match entries.get(self.cursor) {
                     Some(Entry::Record(i)) => {

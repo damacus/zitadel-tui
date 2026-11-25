@@ -8,7 +8,7 @@ use zitadel_tui::{
     config::AppConfig,
     error::{CommandError, ErrorKind},
     output::{CommandEnvelope, ErrorEnvelope},
-    tui_runtime::run_tui,
+    tui_runtime::run_tui_loading,
 };
 
 #[tokio::main]
@@ -52,8 +52,7 @@ async fn main() -> Result<()> {
     }
 
     let config = load_config(&args)?;
-    let conductor = TuiConductor::bootstrap(args.clone(), config).await;
-    run_tui(conductor).await
+    run_tui_loading(TuiConductor::bootstrap(args, config)).await
 }
 
 fn load_config(args: &Cli) -> Result<AppConfig> {

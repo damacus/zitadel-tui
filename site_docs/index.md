@@ -5,23 +5,14 @@ identity providers, and runtime configuration.
 
 ## Features
 
-- **Applications**
-  - List OIDC applications
-  - Create applications from manual flags or templates
-  - Regenerate confidential client secrets
-  - Delete applications
-  - Quick setup from YAML templates
-
-- **Users**
-  - List users
-  - Create human users
-  - Create imported local admin users
-  - Grant `IAM_OWNER`
-  - Quick setup from YAML templates
-
-- **Identity Providers**
-  - List configured IDPs
-  - Configure Google manually
+- **Applications** — Browse and rename apps in the selected project, create web and native OIDC apps,
+  review additions and removals to redirect URIs, rotate secrets and delete apps.
+- **Users** — Browse the selected organisation, create users, inspect project
+  roles, grant or revoke a role, unlock accounts and deactivate users.
+- **Identity providers** — Inspect provider ownership and effective sign-in status.
+  Create a Google provider or edit an existing one.
+- **Settings** — Edit the host, default project, administrative credentials and
+  templates path. Field help appears at the bottom of each form.
 
 - **Configuration and Auth**
   - Canonical TOML config in XDG config space

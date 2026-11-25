@@ -18,26 +18,14 @@ Current status:
 
 ## Features
 
-- **Applications**
-  - list and fetch OIDC applications
-  - create applications from flags or templates
-  - delete applications
-  - regenerate confidential client secrets
-  - quick setup from templates YAML
-
-- **Users**
-  - list and fetch users
-  - create human users
-  - create imported local admin users
-  - grant `IAM_OWNER`
-  - quick setup from templates YAML
-
-- **Identity Providers**
-  - list and fetch IDPs
-  - configure Google manually
-
-- **Projects**
-  - list projects visible to the credential
+- **Applications** — Browse and rename apps in the selected project, create web and native OIDC apps,
+  review additions and removals to redirect URIs, rotate secrets and delete apps.
+- **Users** — Browse the selected organisation, create users, inspect project
+  roles, grant or revoke a role, unlock accounts and deactivate users.
+- **Identity providers** — Inspect provider ownership and effective sign-in status.
+  Create a Google provider or edit an existing one.
+- **Settings** — Edit the host, default project, administrative credentials and
+  templates path. Field help appears at the bottom of each form.
 
 - **Configuration and Auth**
   - TOML config in XDG config space
@@ -78,9 +66,15 @@ cargo install zitadel-tui
 zitadel-tui
 ```
 
-Choose a directory section, then click a record or press Enter to expand it.
-Press `/` to filter by name. Record actions appear beneath the expanded entry.
-Use the arrow keys or mouse wheel to move and Esc to go back.
+Click a tab or use **F1–F4** to switch sections. The header shows the current
+organisation and project. Click either name or press **F6** or **F7** to search
+the choices available to your credential. Selecting an organisation reloads its
+projects, users and identity providers.
+
+Press **/** to search the directory, **Enter** to open a record and **F5** to
+refresh. Wide terminals show details beside the list. Narrow terminals show
+them under the selected record. If you leave a changed form, you can keep
+editing or discard the draft.
 
 ### Headless mode
 
