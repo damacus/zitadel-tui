@@ -68,7 +68,16 @@ impl ZitadelClient {
             .collect())
     }
 
-    pub(crate) async fn google_provider(&self, id: &str) -> Result<Value> {
+    fn provider_api(&self, scope: &str) -> Result<&'static str> {
+        match scope {
+            "Instance" => Ok("/admin/v1"),
+            "Organization" if self.organization.is_some() => Ok("/management/v1"),
+            _ => anyhow::bail!("Choose an instance or selected organization"),
+        }
+    }
+
+    pub(crate) async fn google_provider(&self, id: &str, scope: &str) -> Result<Value> {
+        let prefix = self.provider_api(scope)?;
         ensure!(
             id.bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
@@ -76,11 +85,7 @@ impl ZitadelClient {
             "Invalid provider ID"
         );
         let response = self
-            .api_request(
-                Method::GET,
-                &format!("/management/v1/idps/templates/{id}"),
-                None,
-            )
+            .api_request(Method::GET, &format!("{prefix}/idps/templates/{id}"), None)
             .await?;
         let provider = &response["idp"];
         ensure!(
@@ -92,9 +97,10 @@ impl ZitadelClient {
             "Selected provider has no Google configuration"
         );
         match owner(provider) {
-            Some("Instance") => (),
+            Some("Instance") if scope == "Instance" => (),
             Some("Organization")
-                if self.organization.is_some()
+                if scope == "Organization"
+                    && self.organization.is_some()
                     && provider
                         .pointer("/details/resourceOwner")
                         .and_then(Value::as_str)
@@ -116,18 +122,14 @@ impl ZitadelClient {
             !name.trim().is_empty() && !client_id.trim().is_empty(),
             "Name and client ID are required"
         );
-        let prefix = match scope {
-            "Instance" => "/admin/v1",
-            "Organization" if self.organization.is_some() => "/management/v1",
-            _ => anyhow::bail!("Choose an instance or selected organization"),
-        };
+        let prefix = self.provider_api(scope)?;
         let mut body = json!({"name":name,"clientId":client_id});
         if !secret.is_empty() {
             body["clientSecret"] = json!(secret);
         }
         let path = format!("{prefix}/idps/google");
         if let Some((id, sequence)) = existing {
-            let provider = self.google_provider(id).await?;
+            let provider = self.google_provider(id, scope).await?;
             ensure!(
                 owner(&provider) == Some(scope)
                     && provider

@@ -60,8 +60,8 @@ async fn edit_preserves_scopes_options_and_existing_secret() {
     let mut server = Server::new_async().await;
     let mut client = ZitadelClient::new(server.url(), "test".into()).unwrap();
     client.organization = Some("org-1".into());
-    let read = server.mock("GET","/management/v1/idps/templates/google-1")
-        .match_header("x-zitadel-orgid","org-1")
+    let read = server.mock("GET","/admin/v1/idps/templates/google-1")
+        .match_header("x-zitadel-orgid",Matcher::Missing)
         .with_body(json!({"idp":{"id":"google-1","owner":"IDP_OWNER_TYPE_SYSTEM","details":{"sequence":"9"},"config":{"google":{"clientId":"old","scopes":["email"]},"options":{"autoLinking":"AUTO_LINKING_OPTION_EMAIL"}}}}).to_string()).create_async().await;
     let write = server.mock("PUT","/admin/v1/idps/google/google-1")
         .match_body(Matcher::Json(json!({"name":"New","clientId":"new","scopes":["email"],"providerOptions":{"autoLinking":"AUTO_LINKING_OPTION_EMAIL"}}))).create_async().await;

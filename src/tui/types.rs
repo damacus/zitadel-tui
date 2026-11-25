@@ -26,6 +26,7 @@ pub struct Record {
     pub kind: String,
     pub summary: String,
     pub detail: String,
+    pub provider_owner: Option<&'static str>,
     pub changed_at: String,
     pub redirect_uris: Vec<String>,
 }

@@ -49,6 +49,7 @@ impl From<&App> for Record {
                 .as_ref()
                 .and_then(|cfg| cfg.redirect_uris.clone())
                 .unwrap_or_default(),
+            provider_owner: None,
             changed_at: app.state.clone().unwrap_or_else(|| "unknown".to_string()),
         }
     }
@@ -107,6 +108,7 @@ impl From<&User> for Record {
             summary,
             detail,
             redirect_uris: vec![],
+            provider_owner: None,
             changed_at: "loaded".to_string(),
         }
     }
@@ -126,6 +128,7 @@ impl From<&Idp> for Record {
                 .unwrap_or("Unknown scope")
                 .into(),
             redirect_uris: vec![],
+            provider_owner: crate::api::providers::owner(&idp.raw),
             changed_at: idp
                 .raw
                 .pointer("/details/changeDate")

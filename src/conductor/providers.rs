@@ -4,7 +4,7 @@ use super::{
     TuiConductor,
 };
 use crate::{
-    api::{client::ZitadelClient, providers::owner},
+    api::client::ZitadelClient,
     tui::{CanvasMode, FormState, MessageState, PendingAction, Record},
 };
 
@@ -34,7 +34,10 @@ impl TuiConductor {
         let (Some(client), Some(record)) = (&self.client, record) else {
             return error_mode("Edit Google provider", "Select a provider first.");
         };
-        let provider = match client.google_provider(&record.id).await {
+        let Some(scope) = record.provider_owner else {
+            return error_mode("Cannot read Google provider", "Unknown provider ownership.");
+        };
+        let provider = match client.google_provider(&record.id, scope).await {
             Ok(provider) => provider,
             Err(e) => return error_mode("Cannot read Google provider", &e.to_string()),
         };
@@ -44,7 +47,7 @@ impl TuiConductor {
         else {
             return error_mode("Cannot edit provider", "Missing provider revision.");
         };
-        let scope = owner(&provider).unwrap_or_default();
+
         CanvasMode::EditForm(FormState {
             title: format!("Edit Google provider · {scope}"),
             description: format!("{} · {} · {}", record.name, record.id, record.detail),

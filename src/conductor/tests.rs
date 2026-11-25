@@ -1025,6 +1025,7 @@ fn begin_action_apps_delete_with_record_returns_confirm() {
         summary: String::new(),
         detail: String::new(),
         redirect_uris: vec![],
+        provider_owner: None,
         changed_at: String::new(),
     };
     let mode = conductor.begin_action(ResourceKind::Applications, 2, Some(&record));
