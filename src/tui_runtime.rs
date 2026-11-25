@@ -71,6 +71,7 @@ fn mouse_command(app: &mut App, hits: &Hits, event: event::MouseEvent) -> AppCom
     };
     match *target {
         Target::Section(i) => {
+            app.set_canvas_mode(CanvasMode::Browse);
             app.selected_resource = i;
             app.focus = Focus::Records;
             app.cursor = 0;

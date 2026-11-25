@@ -77,7 +77,7 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut Hits) {
                 items.push(Line::default())
             }
             let y = rail.y + 1 + items.len() as u16;
-            if browse && y < rail.bottom().saturating_sub(1) {
+            if !app.setup_required && y < rail.bottom().saturating_sub(1) {
                 hits.push((
                     Rect::new(rail.x + 1, y, rail.width.saturating_sub(2), 1),
                     Target::Section(i),
