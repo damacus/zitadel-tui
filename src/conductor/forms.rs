@@ -17,6 +17,19 @@ impl TuiConductor {
                 "Choose a project in the header to manage applications.",
             );
         }
+        if resource == ResourceKind::Applications
+            && self.client.as_ref().is_some_and(|client| {
+                client
+                    .granted_projects
+                    .iter()
+                    .any(|grant| grant.project_id == self.project)
+            })
+        {
+            return error_mode(
+                "Granted project",
+                "Switch to the owning organisation to manage applications.",
+            );
+        }
         match resource {
             ResourceKind::Applications => match action_index {
                 0 => CanvasMode::EditForm(FormState {
@@ -122,8 +135,8 @@ impl TuiConductor {
                         fields: vec![text_field(
                             "redirect_uris",
                             "Redirect URIs",
-                            &record.redirect_uris.join(", "),
-                            "Comma-separated callback URLs. Remove a URL to stop accepting it.",
+                            &record.redirect_uris.join(" "),
+                            "Separate callback URLs with spaces. Keep at least one URL.",
                         )],
                     }),
                     None => error_mode("No application selected", "Choose an application first."),

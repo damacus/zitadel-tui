@@ -93,8 +93,21 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut Hits) {
         let [left, right] = Layout::horizontal([Constraint::Percentage(33), Constraint::Fill(1)])
             .spacing(Spacing::Overlap(1))
             .areas(body);
-        frame.render_widget(border(), left);
-        frame.render_widget(border(), right);
+        frame.render_widget(border(), body);
+        // Keep the tab rule uninterrupted. Some terminal fonts place the
+        // horizontal strokes of tee glyphs below the regular border glyph.
+        let right_inner = border().inner(right);
+        frame.render_widget(
+            Block::default()
+                .borders(Borders::LEFT)
+                .border_style(Style::default().fg(BORDER)),
+            Rect::new(
+                right.x,
+                right_inner.y.saturating_add(1),
+                1,
+                right_inner.height.saturating_sub(2),
+            ),
+        );
         if browse {
             draw_content(frame, border().inner(left), app, hits);
             draw_details(frame, border().inner(right), app);

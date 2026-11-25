@@ -27,7 +27,10 @@ impl TuiConductor {
                 original,
             } => {
                 let mut desired = Vec::new();
-                for uri in split_csv(&form_value(form, "redirect_uris")) {
+                for uri in form_value(form, "redirect_uris")
+                    .split_whitespace()
+                    .map(str::to_owned)
+                {
                     if !desired.contains(&uri) {
                         desired.push(uri);
                     }
@@ -44,6 +47,12 @@ impl TuiConductor {
                         title: "No redirect URI changes".into(),
                         lines: vec![name.clone()],
                     });
+                }
+                if desired.is_empty() {
+                    return error_mode(
+                        "Keep at least one callback",
+                        "This Zitadel API cannot clear the final redirect URI.",
+                    );
                 }
                 CanvasMode::Confirm(crate::tui::ConfirmState {
                     title: format!("Review redirect URIs for {name}"),
@@ -539,20 +548,21 @@ impl TuiConductor {
         config.apps_config_file = optional_value(form, "templates_path").map(PathBuf::from);
         match config.save_for_session(self.cli.config.as_deref()) {
             Ok(path) => {
+                let host_changed = config.zitadel_url.as_deref() != Some(self.host.as_str());
+                if host_changed {
+                    self.organization = None;
+                    self.host = config.zitadel_url.clone().unwrap_or_default();
+                }
+                if host_changed || config.project_id != self.config.project_id {
+                    self.project = self
+                        .cli
+                        .project_id
+                        .clone()
+                        .or_else(|| config.project_id.clone())
+                        .unwrap_or_default();
+                }
                 self.config = config;
                 self.templates = self.config.templates().unwrap_or_default();
-                if let Some(host) = &self.config.zitadel_url {
-                    if *host != self.host {
-                        self.organization = None;
-                    }
-                    self.host.clone_from(host);
-                }
-                self.project = self
-                    .cli
-                    .project_id
-                    .clone()
-                    .or_else(|| self.config.project_id.clone())
-                    .unwrap_or_default();
                 self.refresh_runtime().await;
                 CanvasMode::Success(MessageState {
                     title: "Config saved".to_string(),

@@ -35,14 +35,18 @@ impl App {
         }
     }
     pub fn dirty(&self) -> bool {
-        match &self.canvas_mode {
-            CanvasMode::EditForm(f) | CanvasMode::Setup(f) => !f
+        let draft = match &self.canvas_mode {
+            CanvasMode::EditForm(form) | CanvasMode::Setup(form) => Some(form),
+            CanvasMode::Confirm(_) => self.review_draft.as_ref(),
+            _ => None,
+        };
+        draft.is_some_and(|form| {
+            !form
                 .fields
                 .iter()
-                .map(|f| &f.value)
-                .eq(self.initial_values.iter()),
-            _ => false,
-        }
+                .map(|field| &field.value)
+                .eq(self.initial_values.iter())
+        })
     }
     pub fn navigate(&mut self, to: Destination) -> AppCommand {
         if self.dirty() {

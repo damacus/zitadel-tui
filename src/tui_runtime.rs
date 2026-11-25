@@ -38,7 +38,26 @@ pub async fn run_tui_loading(
                 frame.area(),
             );
         })?;
-        let mut conductor = bootstrap.await;
+        let wait_for_quit = async {
+            loop {
+                if event::poll(std::time::Duration::ZERO)? {
+                    if let Event::Key(key) = event::read()? {
+                        if key.kind == KeyEventKind::Press
+                            && (key.code == KeyCode::Char('q')
+                                || (key.code == KeyCode::Char('c')
+                                    && key.modifiers.contains(event::KeyModifiers::CONTROL)))
+                        {
+                            return Ok::<(), std::io::Error>(());
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+        };
+        let mut conductor = tokio::select! {
+            conductor = bootstrap => conductor,
+            quit = wait_for_quit => return Ok(quit?),
+        };
         run_app(terminal, &mut conductor).await
     }
     .await;
@@ -204,7 +223,7 @@ async fn handle_app_command(
         }
         AppCommand::Confirm(pending) => {
             let next = conductor.confirm(pending).await;
-            app.set_canvas_mode(next);
+            app.finish_confirmation(next);
             app.sync_runtime(conductor.bootstrap_state());
             Ok(true)
         }

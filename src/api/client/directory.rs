@@ -25,6 +25,7 @@ impl ZitadelClient {
                     .as_str()
                     .or_else(|| row["userId"].as_str())
                     .or_else(|| row["key"].as_str())
+                    .or_else(|| row["grantId"].as_str())
                     .context("directory entry is missing an ID")?;
                 if !seen.insert(id.to_owned()) {
                     bail!("directory changed during pagination; refresh to retry");
@@ -52,6 +53,24 @@ impl ZitadelClient {
     pub(crate) async fn directory_projects(&self) -> Result<Vec<(String, String)>> {
         self.directory_choices("/management/v1/projects/_search", json!({}))
             .await
+    }
+
+    pub(crate) async fn directory_granted_projects(&self) -> Result<Vec<GrantedProject>> {
+        let rows = self
+            .directory_pages("/management/v1/granted_projects/_search", json!({}))
+            .await?;
+        rows.into_iter()
+            .filter(|row| row["state"] == "PROJECT_GRANT_STATE_ACTIVE")
+            .map(|row| {
+                if let Some(org) = self.organization.as_deref() {
+                    anyhow::ensure!(
+                        row["grantedOrgId"].as_str() == Some(org),
+                        "Project grant belongs to another organization"
+                    );
+                }
+                Ok(serde_json::from_value(row)?)
+            })
+            .collect()
     }
 
     async fn directory_choices(&self, path: &str, body: Value) -> Result<Vec<(String, String)>> {

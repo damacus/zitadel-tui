@@ -22,6 +22,7 @@ impl App {
 
         Self {
             initial_values: Self::field_values(&canvas_mode),
+            review_draft: None,
             overlay: None,
             cursor: 0,
             expanded: None,
@@ -191,7 +192,7 @@ impl App {
                     self.scroll = self.scroll.saturating_sub(1);
                     AppCommand::Noop
                 }
-                KeyCode::Char('q') => AppCommand::Quit,
+                KeyCode::Char('q') => self.navigate(super::Destination::Quit),
                 _ => AppCommand::Noop,
             }
         }
@@ -202,12 +203,37 @@ impl App {
             CanvasMode::Error(error) => {
                 self.overlay = Some(super::Overlay::SubmissionError(error, 0))
             }
+            CanvasMode::Confirm(confirm) => {
+                if let CanvasMode::EditForm(form) = &self.canvas_mode {
+                    self.review_draft = Some(form.clone());
+                }
+                self.canvas_mode = CanvasMode::Confirm(confirm);
+                self.scroll = 0;
+            }
             mode => self.set_canvas_mode(mode),
         }
     }
 
+    pub fn finish_confirmation(&mut self, next: CanvasMode) {
+        if matches!(next, CanvasMode::Error(_)) && self.restore_review_draft() {
+            self.finish_submission(next);
+        } else {
+            self.set_canvas_mode(next);
+        }
+    }
+
+    fn restore_review_draft(&mut self) -> bool {
+        let Some(form) = self.review_draft.take() else {
+            return false;
+        };
+        self.canvas_mode = CanvasMode::EditForm(form);
+        self.scroll = 0;
+        true
+    }
+
     pub fn set_canvas_mode(&mut self, canvas_mode: CanvasMode) {
         self.scroll = 0;
+        self.review_draft = None;
         self.initial_values = Self::field_values(&canvas_mode);
         self.canvas_mode = canvas_mode;
         self.focus = if matches!(self.canvas_mode, CanvasMode::Browse) {
@@ -218,6 +244,7 @@ impl App {
     }
 
     pub fn reset_to_browse(&mut self) {
+        self.review_draft = None;
         self.canvas_mode = if self.setup_required {
             CanvasMode::Setup(default_setup_form(&TuiBootstrap {
                 organization: self.organization.clone(),
@@ -385,6 +412,9 @@ impl App {
     }
 
     fn handle_escape(&mut self) {
+        if self.restore_review_draft() {
+            return;
+        }
         if !matches!(self.canvas_mode, CanvasMode::Browse) {
             self.reset_to_browse();
         }

@@ -56,14 +56,33 @@ impl TuiConductor {
             }
         }
         client.organization.clone_from(&self.organization);
-        let (organizations, projects, users, providers) = tokio::join!(
+        let (organizations, projects, grants, users, providers) = tokio::join!(
             client.directory_organizations(),
             client.directory_projects(),
+            client.directory_granted_projects(),
             client.directory_users(),
             Self::provider_records(&client),
         );
         self.organizations = section(organizations, "organizations", &mut self.org_error);
         self.projects = section(projects, "projects", &mut self.project_error);
+        match grants {
+            Ok(grants) => {
+                for grant in &grants {
+                    if !self.projects.iter().any(|(id, _)| *id == grant.project_id) {
+                        self.projects.push((
+                            grant.project_id.clone(),
+                            format!("{} (granted)", grant.project_name),
+                        ));
+                    }
+                }
+                client.granted_projects = grants;
+            }
+            Err(error) if self.project_error.is_none() => {
+                self.project_error = Some(format!("Could not load granted projects: {error}"));
+            }
+            Err(_) => {}
+        }
+
         self.user_records = section(users, "users", &mut self.user_error)
             .iter()
             .map(Record::from)
@@ -98,6 +117,13 @@ impl TuiConductor {
                     .clone()
                     .unwrap_or_else(|| "No project available".to_owned()),
             );
+        } else if client
+            .granted_projects
+            .iter()
+            .any(|grant| grant.project_id == self.project)
+        {
+            self.app_error =
+                Some("Application administration is available in the owning organisation.".into());
         } else {
             self.app_records = section(
                 client.directory_apps(&self.project).await,

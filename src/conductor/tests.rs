@@ -1175,3 +1175,86 @@ async fn setup_rejects_an_invalid_pat_before_persisting_the_custom_config() {
     assert!(!config_path.exists());
     rejection.assert_async().await;
 }
+
+#[tokio::test]
+async fn redirect_review_preserves_literal_commas_and_rejects_an_empty_list() {
+    let conductor = test_conductor("https://example.test");
+    let existing = "https://example.test/cb?audience=a,b";
+    let record = Record {
+        id: "a".into(),
+        name: "Example".into(),
+        redirect_uris: vec![existing.into()],
+        ..Record::default()
+    };
+    let CanvasMode::EditForm(mut form) =
+        conductor.begin_action(ResourceKind::Applications, 4, Some(&record))
+    else {
+        panic!("expected editor")
+    };
+    assert_eq!(form.fields[0].value, existing);
+    form.fields[0].value.push_str(" https://example.test/other");
+    let mut conductor = conductor;
+    let CanvasMode::Confirm(review) = conductor.submit_form(&form).await else {
+        panic!("expected review")
+    };
+    assert_eq!(review.lines, ["Add     https://example.test/other"]);
+    form.fields[0].value.clear();
+    assert!(matches!(
+        conductor.submit_form(&form).await,
+        CanvasMode::Error(_)
+    ));
+}
+
+#[test]
+fn startup_setup_uses_the_saved_default_project_even_with_an_override() {
+    let mut conductor = test_conductor("https://example.test");
+    conductor.setup_required = true;
+    conductor.project.clear();
+    conductor.config.project_id = Some("saved".into());
+    conductor.cli.project_id = Some("override".into());
+    let bootstrap = conductor.bootstrap_state();
+    assert_eq!(
+        form_value(&crate::tui::default_setup_form(&bootstrap), "project"),
+        "saved"
+    );
+}
+
+#[tokio::test]
+async fn saving_templates_keeps_the_active_project() {
+    let mut server = mockito::Server::new_async().await;
+    let _projects = server
+        .mock("POST", "/management/v1/projects/_search")
+        .with_body(
+            r#"{"result":[{"id":"active","name":"Active"},{"id":"default","name":"Default"}]}"#,
+        )
+        .create_async()
+        .await;
+    let _grants = server
+        .mock("POST", "/management/v1/granted_projects/_search")
+        .with_body("{}")
+        .create_async()
+        .await;
+    let mut conductor = test_conductor(&server.url());
+    conductor.organization = Some("org".into());
+    conductor.project = "active".into();
+    conductor.config.project_id = Some("default".into());
+    conductor.cli.project_id = None;
+    let path = temp_cache_path();
+    conductor.cli.config = Some(path.clone());
+    let CanvasMode::EditForm(mut form) = conductor.begin_action(ResourceKind::Config, 0, None)
+    else {
+        panic!("expected settings form")
+    };
+    form.fields
+        .iter_mut()
+        .find(|field| field.key == "templates_path")
+        .unwrap()
+        .value = "/example/templates.yml".into();
+    assert!(matches!(
+        conductor.submit_form(&form).await,
+        CanvasMode::Success(_)
+    ));
+    assert_eq!(conductor.project, "active");
+    assert_eq!(conductor.config.project_id.as_deref(), Some("default"));
+    fs::remove_file(path).unwrap();
+}

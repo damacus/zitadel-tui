@@ -178,6 +178,7 @@ pub enum AppCommand {
 pub struct App {
     pub overlay: Option<super::Overlay>,
     pub initial_values: Vec<String>,
+    pub(super) review_draft: Option<FormState>,
     pub cursor: usize,
     pub expanded: Option<usize>,
     pub filter: String,

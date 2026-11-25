@@ -1211,6 +1211,11 @@ fn wide_directory_joins_borders_and_exposes_provider_click_targets() {
     assert!(hits
         .iter()
         .any(|(_, t)| matches!(t, super::Target::Scope(super::Scope::Organisation))));
+    for x in 1..99 {
+        assert_eq!(buf[(x, 4)].symbol(), "─");
+        assert_eq!(buf[(x, 21)].symbol(), "─");
+    }
+    assert_eq!(buf[(32, 6)].symbol(), "│");
     let screen = buf.content.iter().map(|c| c.symbol()).collect::<String>();
     let directory = buf
         .content
@@ -1230,4 +1235,54 @@ fn wide_directory_joins_borders_and_exposes_provider_click_targets() {
         "{words}"
     );
     assert!(!screen.contains("No records"));
+}
+
+#[test]
+fn confirmation_retains_the_originating_draft() {
+    use super::{ConfirmState, MessageState, PendingAction};
+    use crossterm::event::KeyCode;
+    let mut app = test_app();
+    let mut form = super::default_setup_form(&TuiBootstrap {
+        host: "https://example.test".into(),
+        project: "".into(),
+        auth_label: "".into(),
+        templates_path: None,
+        setup_required: false,
+        app_records: vec![],
+        user_records: vec![],
+        idp_records: vec![],
+        idp_error: None,
+        organization: None,
+        organizations: vec![],
+        projects: vec![],
+        org_error: None,
+        project_error: None,
+        app_error: None,
+        user_error: None,
+    });
+    form.pending = PendingAction::SaveConfig;
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.handle_key(KeyCode::Char('x'));
+    let expected = app.canvas_mode.clone();
+    let review = CanvasMode::Confirm(ConfirmState {
+        title: "Review".into(),
+        lines: vec![],
+        submit_label: "Apply".into(),
+        pending: PendingAction::SaveConfig,
+    });
+    app.finish_submission(review.clone());
+    app.handle_key(KeyCode::F(2));
+    assert!(matches!(app.overlay, Some(super::Overlay::Discard(_))));
+    app.handle_key(KeyCode::Esc);
+    app.handle_key(KeyCode::Esc);
+    assert_eq!(app.canvas_mode, expected);
+    assert!(app.dirty());
+    app.finish_submission(review);
+    app.finish_confirmation(CanvasMode::Error(MessageState {
+        title: "Failed".into(),
+        lines: vec![],
+    }));
+    app.handle_key(KeyCode::Esc);
+    assert_eq!(app.canvas_mode, expected);
+    assert!(app.dirty());
 }

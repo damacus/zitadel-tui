@@ -11,6 +11,39 @@ mod tests {
     use mockito::{Matcher, Server};
 
     #[tokio::test]
+    async fn delegated_role_uses_the_selected_organisations_grant() {
+        let mut server = Server::new_async().await;
+        let mut client = ZitadelClient::new(server.url(), "token".into()).unwrap();
+        client.organization = Some("recipient".into());
+        let list = server.mock("POST", "/management/v1/granted_projects/_search")
+            .match_header("x-zitadel-orgid", "recipient")
+            .with_body(json!({"result":[{"projectId":"p","projectName":"Partner","grantId":"g","grantedOrgId":"recipient",
+                "state":"PROJECT_GRANT_STATE_ACTIVE","grantedRoleKeys":["reader"]}]}).to_string())
+            .create_async().await;
+        client.granted_projects = client.directory_granted_projects().await.unwrap();
+        assert_eq!(client.project_role_keys("p").await.unwrap(), ["reader"]);
+        let search = server.mock("POST", "/management/v1/users/grants/_search")
+            .match_header("x-zitadel-orgid", "recipient")
+            .match_body(Matcher::PartialJson(json!({"queries":[{"userIdQuery":{"userId":"u"}},
+                {"projectIdQuery":{"projectId":"p"}},{"projectGrantIdQuery":{"projectGrantId":"g"}}]})))
+            .with_body("{}").create_async().await;
+        let add = server
+            .mock("POST", "/management/v1/users/u/grants")
+            .match_header("x-zitadel-orgid", "recipient")
+            .match_body(Matcher::Json(
+                json!({"projectId":"p","projectGrantId":"g","roleKeys":["reader"]}),
+            ))
+            .create_async()
+            .await;
+        client
+            .change_user_role("u", "p", None, "reader", true)
+            .await
+            .unwrap();
+        list.assert_async().await;
+        search.assert_async().await;
+        add.assert_async().await;
+    }
+    #[tokio::test]
     async fn revoke_preserves_other_roles_and_refuses_stale_review() {
         let mut server = Server::new_async().await;
         let client = ZitadelClient::new(server.url(), "token".into()).unwrap();
@@ -112,10 +145,24 @@ impl ZitadelClient {
         user: &str,
         project: &str,
     ) -> Result<Option<Grant>> {
-        let response = self.api_request(Method::POST, "/management/v1/users/grants/_search", Some(json!({
-            "query": {"limit": 2},
-            "queries": [{"userIdQuery":{"userId":user}}, {"projectIdQuery":{"projectId":project}}]
-        }))).await?;
+        let mut queries = vec![
+            json!({"userIdQuery":{"userId":user}}),
+            json!({"projectIdQuery":{"projectId":project}}),
+        ];
+        let delegated = self
+            .granted_projects
+            .iter()
+            .find(|grant| grant.project_id == project);
+        if let Some(grant) = delegated {
+            queries.push(json!({"projectGrantIdQuery":{"projectGrantId":grant.grant_id}}));
+        }
+        let response = self
+            .api_request(
+                Method::POST,
+                "/management/v1/users/grants/_search",
+                Some(json!({"query":{"limit":2},"queries":queries})),
+            )
+            .await?;
         let rows = response.get("result").cloned().unwrap_or(json!([]));
         if let Some(org) = self.organization.as_ref() {
             ensure!(
@@ -127,6 +174,15 @@ impl ZitadelClient {
                         .and_then(Value::as_str)
                         == Some(org.as_str())),
                 "Returned authorization belongs to another organization."
+            );
+        }
+        if let Some(grant) = delegated {
+            ensure!(
+                rows.as_array()
+                    .context("Invalid grants result")?
+                    .iter()
+                    .all(|row| row["projectGrantId"].as_str() == Some(grant.grant_id.as_str())),
+                "Returned authorization does not match the project grant."
             );
         }
         let mut grants: Vec<Grant> = serde_json::from_value(rows)?;
@@ -144,6 +200,13 @@ impl ZitadelClient {
     }
 
     pub(crate) async fn project_role_keys(&self, project: &str) -> Result<Vec<String>> {
+        if let Some(grant) = self
+            .granted_projects
+            .iter()
+            .find(|grant| grant.project_id == project)
+        {
+            return Ok(grant.granted_role_keys.clone());
+        }
         let path = format!("/management/v1/projects/{project}/roles/_search");
         self.directory_pages(&path, json!({}))
             .await?
@@ -170,6 +233,16 @@ impl ZitadelClient {
             current.as_ref() == reviewed,
             "Roles changed since review. Open the action again."
         );
+        let delegated = self
+            .granted_projects
+            .iter()
+            .find(|grant| grant.project_id == project);
+        if let Some(grant) = delegated.filter(|_| add) {
+            ensure!(
+                grant.granted_role_keys.iter().any(|key| key == role),
+                "Role is unavailable in the project grant."
+            );
+        }
         let path = format!("/management/v1/users/{user}/grants");
         let (method, path, body) = if let Some(grant) = current {
             let path = format!("{path}/{}", grant.id);
@@ -190,11 +263,11 @@ impl ZitadelClient {
             }
         } else {
             ensure!(add, "There is no role to revoke.");
-            (
-                Method::POST,
-                path,
-                Some(json!({"projectId":project,"roleKeys":[role]})),
-            )
+            let mut body = json!({"projectId":project,"roleKeys":[role]});
+            if let Some(grant) = delegated {
+                body["projectGrantId"] = json!(grant.grant_id);
+            }
+            (Method::POST, path, Some(body))
         };
         self.api_request(method, &path, body).await?;
         Ok(())

@@ -40,7 +40,11 @@ impl TuiConductor {
     pub fn bootstrap_state(&self) -> TuiBootstrap {
         TuiBootstrap {
             host: self.host.clone(),
-            project: self.project.clone(),
+            project: if self.setup_required {
+                self.config.project_id.clone().unwrap_or_default()
+            } else {
+                self.project.clone()
+            },
             auth_label: self.auth_label.clone(),
             templates_path: self
                 .config
