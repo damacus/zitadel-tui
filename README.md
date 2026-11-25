@@ -78,6 +78,10 @@ cargo install zitadel-tui
 zitadel-tui
 ```
 
+Choose a directory section, then click a record or press Enter to expand it.
+Press `/` to filter by name. Record actions appear beneath the expanded entry.
+Use the arrow keys or mouse wheel to move and Esc to go back.
+
 ### Headless mode
 
 Supplying a subcommand runs a one-shot command and prints a JSON envelope on

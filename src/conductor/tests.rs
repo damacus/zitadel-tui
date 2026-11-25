@@ -74,6 +74,7 @@ fn begin_config_unknown_action_browses() {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        idp_error: None,
     };
 
     let mode = conductor.begin_action(ResourceKind::Config, 1, None);
@@ -109,6 +110,7 @@ fn test_conductor(host: &str) -> TuiConductor {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        idp_error: None,
     }
 }
 
@@ -160,7 +162,7 @@ async fn refresh_runtime_loads_all_record_types() {
         .create_async()
         .await;
     let _idps = server
-        .mock("POST", "/admin/v1/idps/_search")
+        .mock("POST", "/management/v1/idps/templates/_search")
         .match_header("authorization", "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -306,7 +308,7 @@ async fn quick_setup_apps_batches_creates_and_refreshes() {
         .create_async()
         .await;
     let _idps = server
-        .mock("POST", "/admin/v1/idps/_search")
+        .mock("POST", "/management/v1/idps/templates/_search")
         .match_header("authorization", "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -429,7 +431,7 @@ async fn quick_setup_users_batches_creates_and_grants_admins() {
         .create_async()
         .await;
     let _idps = server
-        .mock("POST", "/admin/v1/idps/_search")
+        .mock("POST", "/management/v1/idps/templates/_search")
         .match_header("authorization", "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -879,6 +881,7 @@ fn begin_action_apps_delete_with_record_returns_confirm() {
         kind: "public".to_string(),
         summary: String::new(),
         detail: String::new(),
+        redirect_uris: vec![],
         changed_at: String::new(),
     };
     let mode = conductor.begin_action(ResourceKind::Applications, 2, Some(&record));

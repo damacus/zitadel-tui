@@ -25,4 +25,5 @@ pub struct TuiConductor {
     app_records: Vec<Record>,
     user_records: Vec<Record>,
     idp_records: Vec<Record>,
+    idp_error: Option<String>,
 }

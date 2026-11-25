@@ -548,7 +548,7 @@ const IDPS_LIST_BODY: &str = r#"{"result":[
 fn idps_list_defaults_to_summary_projection() {
     let mut server = Server::new();
     server
-        .mock("POST", "/admin/v1/idps/_search")
+        .mock("POST", "/management/v1/idps/templates/_search")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(IDPS_LIST_BODY)
@@ -582,7 +582,7 @@ fn idps_list_defaults_to_summary_projection() {
 fn idps_list_full_returns_raw_payload() {
     let mut server = Server::new();
     server
-        .mock("POST", "/admin/v1/idps/_search")
+        .mock("POST", "/management/v1/idps/templates/_search")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(IDPS_LIST_BODY)
@@ -905,7 +905,7 @@ fn users_get_by_email_returns_summary_projection() {
 fn idps_get_by_name_returns_summary_projection() {
     let mut server = Server::new();
     server
-        .mock("POST", "/admin/v1/idps/_search")
+        .mock("POST", "/management/v1/idps/templates/_search")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(IDPS_LIST_BODY)

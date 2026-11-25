@@ -61,6 +61,73 @@ impl ZitadelClient {
         decode_list(response)
     }
 
+    async fn oidc_redirect_uris(&self, project_id: &str, app_id: &str) -> Result<Vec<String>> {
+        let response = self
+            .api_request(
+                Method::POST,
+                "/zitadel.application.v2.ApplicationService/GetApplication",
+                Some(json!({"applicationId": app_id})),
+            )
+            .await?;
+        let app = response
+            .get("application")
+            .context("missing application in response")?;
+        if app.get("projectId").and_then(Value::as_str) != Some(project_id) {
+            bail!("application does not belong to the selected project");
+        }
+        let oidc = app
+            .get("oidcConfiguration")
+            .context("application is not an OIDC application")?;
+        let uris = oidc
+            .get("redirectUris")
+            .context("application response has no redirect URI list")?
+            .as_array()
+            .context("invalid redirect URI list")?;
+        uris.iter()
+            .map(|uri| {
+                uri.as_str()
+                    .map(str::to_owned)
+                    .context("invalid redirect URI in application response")
+            })
+            .collect()
+    }
+
+    pub async fn add_redirect_uris(
+        &self,
+        project_id: &str,
+        app_id: &str,
+        additions: &[String],
+    ) -> Result<Value> {
+        if additions.is_empty()
+            || additions
+                .iter()
+                .any(|uri| uri.trim().is_empty() || uri.trim() != uri)
+        {
+            bail!("provide at least one non-empty redirect URI without surrounding whitespace");
+        }
+        let mut uris = self.oidc_redirect_uris(project_id, app_id).await?;
+        let mut added = Vec::new();
+        for uri in additions {
+            if !uris.contains(uri) {
+                uris.push(uri.clone());
+                added.push(uri.clone());
+            }
+        }
+        if added.is_empty() {
+            return Ok(json!({"changed": false, "redirectUris": uris}));
+        }
+        self.api_request(Method::POST, "/zitadel.application.v2.ApplicationService/UpdateApplication",
+            Some(json!({"projectId": project_id, "applicationId": app_id, "oidcConfiguration": {"redirectUris": uris}})))
+            .await.context("update failed or its outcome is unknown; read the application before retrying")?;
+        let actual = self.oidc_redirect_uris(project_id, app_id).await.context(
+            "update was sent but verification failed; read the application before retrying",
+        )?;
+        if uris.iter().any(|uri| !actual.contains(uri)) {
+            bail!("update was sent but verification found missing redirect URIs; inspect the application before retrying");
+        }
+        Ok(json!({"changed": true, "added": added, "redirectUris": actual}))
+    }
+
     pub async fn create_oidc_app(
         &self,
         project_id: &str,
@@ -259,7 +326,7 @@ impl ZitadelClient {
         let response = self
             .api_request(
                 Method::POST,
-                "/admin/v1/idps/_search",
+                "/management/v1/idps/templates/_search",
                 Some(json!({ "query": { "limit": limit } })),
             )
             .await?;
@@ -302,6 +369,9 @@ impl ZitadelClient {
             .bearer_auth(&self.token)
             .header("Accept", "application/json");
 
+        if path.starts_with("/zitadel.application.v2.") {
+            request = request.header("Connect-Protocol-Version", "1");
+        }
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -368,6 +438,101 @@ fn result_array(value: Value) -> Vec<Value> {
 mod tests {
     use super::*;
     use mockito::{Matcher, Server};
+
+    #[tokio::test]
+    async fn add_redirect_uris_preserves_existing_and_verifies_update() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        let mut server = Server::new_async().await;
+        let reads = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&reads);
+        let get = server.mock("POST", "/zitadel.application.v2.ApplicationService/GetApplication")
+            .match_header("connect-protocol-version", "1")
+            .match_body(Matcher::Json(json!({"applicationId": "app-1"})))
+            .with_status(200)
+            .with_chunked_body(move |writer| {
+                let uris = if count.fetch_add(1, Ordering::SeqCst) == 0 { vec!["https://old.example/cb"] } else { vec!["https://old.example/cb", "https://new.example/cb"] };
+                write!(writer, "{}", json!({"application": {"projectId": "project-1", "oidcConfiguration": {"redirectUris": uris}}}))
+            }).expect(2).create_async().await;
+        let update = server.mock("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication")
+            .match_header("authorization", "Bearer test-token")
+            .match_body(Matcher::Json(json!({"applicationId": "app-1", "projectId": "project-1", "oidcConfiguration": {"redirectUris": ["https://old.example/cb", "https://new.example/cb"]}})))
+            .with_status(200).with_body("{}").create_async().await;
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let result = client
+            .add_redirect_uris(
+                "project-1",
+                "app-1",
+                &[
+                    "https://new.example/cb".into(),
+                    "https://new.example/cb".into(),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(result["changed"], true);
+        get.assert_async().await;
+        update.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn existing_redirect_is_a_noop_and_wrong_project_is_rejected() {
+        let mut server = Server::new_async().await;
+        let get = server.mock("POST", "/zitadel.application.v2.ApplicationService/GetApplication")
+            .with_status(200).with_body(r#"{"application":{"projectId":"project-1","oidcConfiguration":{"redirectUris":["https://old.example/cb"]}}}"#)
+            .expect(2).create_async().await;
+        let update = server
+            .mock(
+                "POST",
+                "/zitadel.application.v2.ApplicationService/UpdateApplication",
+            )
+            .expect(0)
+            .create_async()
+            .await;
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let result = client
+            .add_redirect_uris("project-1", "app-1", &["https://old.example/cb".into()])
+            .await
+            .unwrap();
+        assert_eq!(result["changed"], false);
+        assert!(client
+            .add_redirect_uris("wrong-project", "app-1", &["https://new.example/cb".into()])
+            .await
+            .is_err());
+        get.assert_async().await;
+        update.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn redirect_update_failure_is_reported_without_exposing_response() {
+        let mut server = Server::new_async().await;
+        let get = server.mock("POST", "/zitadel.application.v2.ApplicationService/GetApplication")
+            .with_status(200).with_body(r#"{"application":{"projectId":"project-1","oidcConfiguration":{"redirectUris":["https://old.example/cb"]}}}"#)
+            .create_async().await;
+        let update = server
+            .mock(
+                "POST",
+                "/zitadel.application.v2.ApplicationService/UpdateApplication",
+            )
+            .with_status(403)
+            .with_body(r#"{"message":"private response"}"#)
+            .create_async()
+            .await;
+        let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
+        let error = client
+            .add_redirect_uris("project-1", "app-1", &["https://new.example/cb".into()])
+            .await
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("403"));
+        assert!(message.contains("before retrying"));
+        assert!(!message.contains("private response"));
+        get.assert_async().await;
+        update.assert_async().await;
+    }
 
     #[tokio::test]
     async fn list_projects_sends_bearer_token_and_parses_results() {
@@ -485,7 +650,7 @@ mod tests {
     async fn surfaces_api_errors_with_status_and_body() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("POST", "/admin/v1/idps/_search")
+            .mock("POST", "/management/v1/idps/templates/_search")
             .with_status(403)
             .with_header("content-type", "application/json")
             .with_body(r#"{"message":"forbidden","client_secret":"leaked"}"#)

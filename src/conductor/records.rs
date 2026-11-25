@@ -37,6 +37,11 @@ impl From<&App> for Record {
             kind: app.kind().to_string(),
             summary,
             detail,
+            redirect_uris: app
+                .oidc_config
+                .as_ref()
+                .and_then(|cfg| cfg.redirect_uris.clone())
+                .unwrap_or_default(),
             changed_at: app.state.clone().unwrap_or_else(|| "unknown".to_string()),
         }
     }
@@ -94,6 +99,7 @@ impl From<&User> for Record {
             kind: format!("{user_type} {state}"),
             summary,
             detail,
+            redirect_uris: vec![],
             changed_at: "loaded".to_string(),
         }
     }
@@ -110,6 +116,7 @@ impl From<&Idp> for Record {
             kind: idp.state.clone().unwrap_or_else(|| "unknown".to_string()),
             summary: idp.r#type.clone().unwrap_or_else(|| "provider".to_string()),
             detail: "manual credentials".to_string(),
+            redirect_uris: vec![],
             changed_at: "configured".to_string(),
         }
     }

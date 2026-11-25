@@ -29,6 +29,7 @@ impl TuiConductor {
             app_records: vec![],
             user_records: vec![],
             idp_records: vec![],
+            idp_error: None,
         };
         conductor.refresh_runtime().await;
         conductor
@@ -48,6 +49,7 @@ impl TuiConductor {
             app_records: self.app_records.clone(),
             user_records: self.user_records.clone(),
             idp_records: self.idp_records.clone(),
+            idp_error: self.idp_error.clone(),
         }
     }
 
@@ -92,6 +94,7 @@ impl TuiConductor {
         .await
         else {
             self.client = None;
+            self.setup_required = true;
             return;
         };
 
@@ -111,23 +114,26 @@ impl TuiConductor {
             return;
         };
 
-        let Ok(project_id) = ops::resolve_project_id(
-            &client,
-            self.cli.project_id.clone(),
-            self.config.project_id.clone(),
-        )
-        .await
-        else {
-            self.client = Some(client);
-            return;
-        };
-
-        self.project = project_id.clone();
-        let (apps, users, idps) = tokio::join!(
-            ops::apps::list(&client, &project_id, 100),
+        let (project, users, idps) = tokio::join!(
+            ops::resolve_project_id(
+                &client,
+                self.cli.project_id.clone(),
+                self.config.project_id.clone()
+            ),
             ops::users::list(&client, 100),
             ops::idps::list(&client, 100)
         );
+        self.idp_error = idps
+            .as_ref()
+            .err()
+            .map(|error| format!("Could not load identity providers: {error}"));
+        let apps = match project {
+            Ok(id) => {
+                self.project = id;
+                ops::apps::list(&client, &self.project, 100).await
+            }
+            Err(error) => Err(error),
+        };
         self.app_records = apps
             .map(|apps| apps.iter().map(Record::from).collect())
             .unwrap_or_default();
