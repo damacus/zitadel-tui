@@ -4,7 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     symbols::merge::MergeStrategy,
     text::Line,
-    widgets::{Block, List, Paragraph, Wrap},
+    widgets::{Block, Borders, List, Paragraph, Wrap},
     Frame,
 };
 
@@ -144,6 +144,43 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut Hits) {
 
 fn draw_content(frame: &mut Frame, area: Rect, app: &App, hits: &mut Hits) {
     let area = Rect::new(area.x + 1, area.y, area.width - 1, area.height);
+    if area.is_empty() {
+        return;
+    }
+    let mut area = area;
+    if let CanvasMode::EditForm(form) | CanvasMode::Setup(form) = &app.canvas_mode {
+        if let Some(field) = form.fields.get(form.selected_field) {
+            let wrap = Wrap { trim: true };
+            let lines = form
+                .fields
+                .iter()
+                .map(|f| {
+                    Paragraph::new(f.help.as_str())
+                        .wrap(wrap)
+                        .line_count(area.width)
+                })
+                .max()
+                .unwrap_or(0);
+            let height = (lines + 1).min(usize::from(area.height / 2)) as u16;
+            if height >= 2 {
+                let [fields, help] =
+                    Layout::vertical([Constraint::Fill(1), Constraint::Length(height)]).areas(area);
+                frame.render_widget(
+                    Paragraph::new(field.help.as_str())
+                        .wrap(wrap)
+                        .style(Style::default().fg(ICE))
+                        .block(
+                            Block::default()
+                                .borders(Borders::TOP)
+                                .title(" Field help ")
+                                .border_style(Style::default().fg(BORDER)),
+                        ),
+                    help,
+                );
+                area = fields;
+            }
+        }
+    }
     let mut rows = vec![];
     let mut targets = Vec::new();
     let mut active = 0usize;
@@ -258,7 +295,7 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &App, hits: &mut Hits) {
             push(f.description.clone(), Style::default());
             push(String::new(), Style::default());
             for (i, field) in f.fields.iter().enumerate() {
-                targets.push((i + 3 + usize::from(i > f.selected_field), Target::Field(i)));
+                targets.push((i + 3, Target::Field(i)));
                 let chosen = i == f.selected_field;
                 push(
                     render_form_line(field, chosen),
@@ -266,7 +303,6 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &App, hits: &mut Hits) {
                 );
                 if chosen {
                     active = i + 3;
-                    push(field.help.clone(), Style::default().fg(ICE));
                 }
             }
             if f.fields.is_empty() {
