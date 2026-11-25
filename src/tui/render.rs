@@ -4,7 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     symbols::merge::MergeStrategy,
     text::Line,
-    widgets::{Block, Paragraph, Wrap},
+    widgets::{Block, List, Paragraph, Wrap},
     Frame,
 };
 
@@ -63,7 +63,7 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut Hits) {
     let show_rail = !narrow || (browse && app.focus == Focus::Resources);
     let content = if show_rail {
         let [rail, main] = Layout::horizontal([
-            Constraint::Length(if narrow { body.width } else { 22 }),
+            Constraint::Length(if narrow { body.width } else { 23 }),
             Constraint::Min(0),
         ])
         .spacing(Spacing::Overlap(1))
@@ -96,7 +96,7 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut Hits) {
                 style,
             ));
         }
-        frame.render_widget(Paragraph::new(items).block(border()), rail);
+        frame.render_widget(List::new(items).block(border()), rail);
         if narrow {
             Rect::default()
         } else {
@@ -140,20 +140,6 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut Hits) {
         }
     }
     frame.render_widget(Paragraph::new(hint).block(border()), footer);
-    // A cell background spans the terminal's entire line height, including leading.
-    if !area.is_empty() {
-        paint_column(frame, area.x, area);
-        paint_column(frame, area.right() - 1, area);
-        if !narrow && !content.is_empty() {
-            paint_column(frame, content.x, content);
-        }
-    }
-}
-
-fn paint_column(frame: &mut Frame, x: u16, area: Rect) {
-    for y in area.y..area.bottom() {
-        frame.buffer_mut()[(x, y)].set_symbol(" ").set_bg(BORDER);
-    }
 }
 
 fn draw_content(frame: &mut Frame, area: Rect, app: &App, hits: &mut Hits) {

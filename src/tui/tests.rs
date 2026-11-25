@@ -1071,12 +1071,10 @@ fn wide_directory_joins_borders_and_exposes_provider_click_targets() {
     let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
     terminal.draw(|f| super::draw(f, &app, &mut hits)).unwrap();
     let buf = terminal.backend().buffer();
-    let border = buf[(20, 2)].fg;
-    for (x, rows) in [(0, 0..24), (99, 0..24), (21, 2..22)] {
-        for y in rows {
-            assert_eq!(buf[(x, y)].bg, border);
-            assert_eq!(buf[(x, y)].symbol(), " ");
-        }
+    assert_eq!(buf[(22, 2)].symbol(), "┬");
+    assert_eq!(buf[(22, 21)].symbol(), "┴");
+    for y in 3..21 {
+        assert_eq!(buf[(22, y)].symbol(), "│");
     }
     assert!(hits
         .iter()
