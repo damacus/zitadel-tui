@@ -11,6 +11,7 @@ use ratatui::{
 const INK: Color = Color::Rgb(14, 22, 34);
 const TEXT: Color = Color::Rgb(230, 238, 247);
 const ICE: Color = Color::Rgb(166, 237, 243);
+const BORDER: Color = Color::Rgb(95, 117, 140);
 fn selected() -> Style {
     Style::default()
         .fg(INK)
@@ -32,7 +33,9 @@ pub enum Target {
 }
 pub type Hits = Vec<(Rect, Target)>;
 fn border() -> Block<'static> {
-    Block::bordered().merge_borders(MergeStrategy::Exact)
+    Block::bordered()
+        .border_style(Style::default().fg(BORDER))
+        .merge_borders(MergeStrategy::Exact)
 }
 pub fn draw(frame: &mut Frame, app: &App, hits: &mut Hits) {
     hits.clear();
@@ -137,6 +140,20 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut Hits) {
         }
     }
     frame.render_widget(Paragraph::new(hint).block(border()), footer);
+    // A cell background spans the terminal's entire line height, including leading.
+    if !area.is_empty() {
+        paint_column(frame, area.x, area);
+        paint_column(frame, area.right() - 1, area);
+        if !narrow && !content.is_empty() {
+            paint_column(frame, content.x, content);
+        }
+    }
+}
+
+fn paint_column(frame: &mut Frame, x: u16, area: Rect) {
+    for y in area.y..area.bottom() {
+        frame.buffer_mut()[(x, y)].set_symbol(" ").set_bg(BORDER);
+    }
 }
 
 fn draw_content(frame: &mut Frame, area: Rect, app: &App, hits: &mut Hits) {
