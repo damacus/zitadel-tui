@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.2.0](https://github.com/damacus/zitadel-tui/compare/v0.1.8...v0.2.0) (2026-11-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* apps delete and users grant-iam-owner now resolve the target through a required selector group before mutating; unknown or duplicate matches fail with not_found/ambiguous instead of reaching the mutation endpoint.
+* --json and --once flags removed (unknown arg, exit 2). Headless commands always print the JSON envelope to stdout; there is no human output mode (the TUI is the human interface). Command failures now exit 1 instead of 0. auth login no longer prompts for a client ID on stdin; pass --client-id or set device_client_id in config.
+
+### Features
+
+* add an offline TUI demo ([#182](https://github.com/damacus/zitadel-tui/issues/182)) ([bb7842a](https://github.com/damacus/zitadel-tui/commit/bb7842a6aa096e9b3080a7980f29a40076df1a3c))
+* browse Zitadel resources in a directory ([#179](https://github.com/damacus/zitadel-tui/issues/179)) ([32d9732](https://github.com/damacus/zitadel-tui/commit/32d9732bdfeafbe0663fbd8f5ec5bb642241b27f))
+* JSON output contract + typed errors + summary projections (stack 3/4) ([#163](https://github.com/damacus/zitadel-tui/issues/163)) ([12914e8](https://github.com/damacus/zitadel-tui/commit/12914e8450b21399dbf3b865073d1204c8457972))
+* manage scoped Zitadel resources in a tabbed workspace ([#180](https://github.com/damacus/zitadel-tui/issues/180)) ([fdb74ad](https://github.com/damacus/zitadel-tui/commit/fdb74ad794ae2bce376f95b10930a6c6261e3e6f))
+* selectors, get/projects commands, --limit, env secrets, agent guide (stack 4/4) ([#164](https://github.com/damacus/zitadel-tui/issues/164)) ([3d1df1c](https://github.com/damacus/zitadel-tui/commit/3d1df1cba39b54f981cf0d61e0577be4d1c3fce8))
+
+
+### Bug Fixes
+
+* **deps:** update rust crate anyhow to v1.0.105 ([#181](https://github.com/damacus/zitadel-tui/issues/181)) ([d32a48b](https://github.com/damacus/zitadel-tui/commit/d32a48b02c3361944339e7ccf82338ee98264017))
+* **deps:** update rust crate jsonwebtoken to v11 ([#136](https://github.com/damacus/zitadel-tui/issues/136)) ([89e9795](https://github.com/damacus/zitadel-tui/commit/89e9795972adf2d2bb95fc566cdd0332f815cf96))
+* **deps:** update rust crate jsonwebtoken to v12 ([#173](https://github.com/damacus/zitadel-tui/issues/173)) ([74dd45a](https://github.com/damacus/zitadel-tui/commit/74dd45af8c7dbe9d475142e254041c737984c966))
+* **deps:** update rust crate toml to v1.2.1 ([#172](https://github.com/damacus/zitadel-tui/issues/172)) ([de51a69](https://github.com/damacus/zitadel-tui/commit/de51a69de06bbdc539cbdc97ca406b5eba675749))
+* **deps:** update rust crate toml to v1.2.2 ([#178](https://github.com/damacus/zitadel-tui/issues/178)) ([20143f6](https://github.com/damacus/zitadel-tui/commit/20143f628ca8775df69d32ce294ee9f25873460f))
+* **deps:** update rust docker tag to v1.100 ([#152](https://github.com/damacus/zitadel-tui/issues/152)) ([e358cc6](https://github.com/damacus/zitadel-tui/commit/e358cc6d4e81e836207a821c6ea75d8fcf7534c4))
+* gate dependency automerge on shipped builds ([#177](https://github.com/damacus/zitadel-tui/issues/177)) ([1aed4ff](https://github.com/damacus/zitadel-tui/commit/1aed4ff295a9cd8dff02f0ae5abde8e37f11280f))
+
 ## [0.1.8](https://github.com/damacus/zitadel-tui/compare/v0.1.7...v0.1.8) (2026-07-13)
 
 
