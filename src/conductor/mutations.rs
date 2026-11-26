@@ -19,6 +19,9 @@ use super::{
 
 impl TuiConductor {
     pub async fn submit_form(&mut self, form: &FormState) -> CanvasMode {
+        if self.cli.demo && !matches!(form.pending, PendingAction::EditRedirectUris { .. }) {
+            return Self::demo_preview();
+        }
         match &form.pending {
             PendingAction::CreateApplication => self.create_application(form).await,
             PendingAction::EditRedirectUris {
@@ -133,6 +136,9 @@ impl TuiConductor {
     }
 
     pub async fn confirm(&mut self, pending: PendingAction) -> CanvasMode {
+        if self.cli.demo {
+            return self.confirm_demo(pending);
+        }
         match pending {
             action @ (PendingAction::UserRole { .. } | PendingAction::UserLifecycle { .. }) => {
                 self.confirm_user_access(action).await

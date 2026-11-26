@@ -6,6 +6,11 @@ use super::TuiConductor;
 
 impl TuiConductor {
     pub async fn bootstrap(cli: crate::cli::Cli, config: crate::config::AppConfig) -> Self {
+        let config = if cli.demo {
+            crate::config::AppConfig::default()
+        } else {
+            config
+        };
         let templates = config.templates().unwrap_or_default();
         let host = cli
             .host
@@ -22,6 +27,7 @@ impl TuiConductor {
             setup_required: true,
             client: None,
             app_records: vec![],
+            demo_apps: vec![],
             user_records: vec![],
             idp_records: vec![],
             organization: Default::default(),
@@ -67,6 +73,10 @@ impl TuiConductor {
     }
 
     pub async fn refresh_runtime(&mut self) {
+        if self.cli.demo {
+            self.refresh_demo();
+            return;
+        }
         self.clear_directory();
         let has_credential = self.cli.token.is_some()
             || self.config.pat.is_some()

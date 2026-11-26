@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use zitadel_tui::{
     cli::{command_path, Cli, Command},
@@ -14,6 +14,18 @@ use zitadel_tui::{
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Cli::parse();
+
+    if args.demo {
+        if args.command.is_some() {
+            Cli::command()
+                .error(
+                    clap::error::ErrorKind::ArgumentConflict,
+                    "--demo opens the interactive TUI and cannot be used with a subcommand",
+                )
+                .exit();
+        }
+        return run_tui_loading(TuiConductor::bootstrap(args, AppConfig::default())).await;
+    }
 
     if let Some(command) = &args.command {
         // `agent` prints the guide verbatim — a doc surface, not an API

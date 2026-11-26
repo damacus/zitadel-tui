@@ -31,6 +31,9 @@ impl TuiConductor {
     }
 
     pub async fn edit_google_form(&self, record: Option<&Record>) -> CanvasMode {
+        if self.cli.demo {
+            return Self::demo_preview();
+        }
         let (Some(client), Some(record)) = (&self.client, record) else {
             return error_mode("Edit Google provider", "Select a provider first.");
         };
