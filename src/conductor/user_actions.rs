@@ -9,6 +9,15 @@ use crate::tui::{CanvasMode, ConfirmState, FormState, MessageState, PendingActio
 
 impl TuiConductor {
     pub async fn begin_user_action(&self, index: usize, record: Option<&Record>) -> CanvasMode {
+        if self.cli.demo {
+            return match (index, record) {
+                (4, Some(user)) => CanvasMode::Success(MessageState {
+                    title: "Project roles".into(),
+                    lines: vec![format!("{} · {}", user.name, self.project), "reader".into()],
+                }),
+                _ => Self::demo_preview(),
+            };
+        }
         match self.user_action(index, record).await {
             Ok(mode) => mode,
             Err(error) => error_mode("User action unavailable", &error.to_string()),

@@ -7,6 +7,10 @@ use crate::ops::{AppSelector, IdpSelector, UserSelector};
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "A terminal UI for managing Zitadel resources")]
 pub struct Cli {
+    /// Open the TUI with fictional data and no connection to Zitadel.
+    #[arg(long)]
+    pub demo: bool,
+
     #[arg(long, env = "ZITADEL_URL", global = true)]
     pub host: Option<String>,
 

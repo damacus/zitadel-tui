@@ -76,6 +76,18 @@ refresh. Wide terminals show details beside the list. Narrow terminals show
 them under the selected record. If you leave a changed form, you can keep
 editing or discard the draft.
 
+### Offline demo
+
+```sh
+zitadel-tui --demo
+```
+
+Browse fictional organisations, projects, applications, users and identity
+providers without a Zitadel connection or credentials. Redirect URI edits are
+saved in memory for the session. Other writes are preview-only.
+
+![Zitadel TUI demo switching organisations, reviewing a redirect URI change and browsing the four tabs](site_docs/images/zitadel-tui-demo.gif)
+
 ### Headless mode
 
 Supplying a subcommand runs a one-shot command and prints a JSON envelope on

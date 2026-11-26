@@ -56,6 +56,7 @@ fn split_csv_filters_empty_entries() {
 fn begin_config_unknown_action_browses() {
     let conductor = TuiConductor {
         cli: Cli {
+            demo: false,
             host: None,
             project_id: None,
             token: None,
@@ -72,6 +73,7 @@ fn begin_config_unknown_action_browses() {
         setup_required: false,
         client: None,
         app_records: vec![],
+        demo_apps: vec![],
         user_records: vec![],
         idp_records: vec![],
         organization: Default::default(),
@@ -91,6 +93,7 @@ fn begin_config_unknown_action_browses() {
 fn test_conductor(host: &str) -> TuiConductor {
     TuiConductor {
         cli: Cli {
+            demo: false,
             host: Some(host.to_string()),
             project_id: Some("project-1".to_string()),
             token: None,
@@ -115,6 +118,7 @@ fn test_conductor(host: &str) -> TuiConductor {
         setup_required: false,
         client: None,
         app_records: vec![],
+        demo_apps: vec![],
         user_records: vec![],
         idp_records: vec![],
         organization: Default::default(),
@@ -358,6 +362,7 @@ async fn bootstrap_marks_cached_oidc_session_as_api_limited() {
 
     let conductor = TuiConductor::bootstrap(
         Cli {
+            demo: false,
             host: Some("https://zitadel.example.com".to_string()),
             project_id: None,
             token: None,
@@ -1257,4 +1262,58 @@ async fn saving_templates_keeps_the_active_project() {
     assert_eq!(conductor.project, "active");
     assert_eq!(conductor.config.project_id.as_deref(), Some("default"));
     fs::remove_file(path).unwrap();
+}
+
+#[tokio::test]
+async fn demo_edits_survive_refresh_and_scope_changes_without_a_client() {
+    let mut conductor = test_conductor("https://live.example.test");
+    conductor.cli.demo = true;
+    conductor.refresh_runtime().await;
+    let snapshot = conductor.bootstrap_state();
+    assert_eq!(snapshot.host, "Demo mode");
+    assert_eq!(snapshot.organizations.len(), 2);
+    assert_eq!(snapshot.projects.len(), 2);
+    assert!(conductor.client.is_none());
+
+    let atlas = &snapshot.app_records[0];
+    let CanvasMode::EditForm(mut form) =
+        conductor.begin_action(ResourceKind::Applications, 4, Some(atlas))
+    else {
+        panic!("expected the redirect editor");
+    };
+    form.fields[0]
+        .value
+        .push_str(" https://preview.example.test/callback");
+    let CanvasMode::Confirm(review) = conductor.submit_form(&form).await else {
+        panic!("expected a redirect review");
+    };
+    assert!(matches!(
+        conductor.confirm(review.pending).await,
+        CanvasMode::Success(_)
+    ));
+    conductor.select_organization("cedar").await.unwrap();
+    assert_eq!(
+        conductor.bootstrap_state().app_records[0].name,
+        "Review Dashboard"
+    );
+    conductor.select_organization("northwind").await.unwrap();
+    conductor.refresh_runtime().await;
+    assert_eq!(
+        conductor.bootstrap_state().app_records[0]
+            .redirect_uris
+            .len(),
+        2
+    );
+
+    let missing_config = temp_cache_path();
+    conductor.cli.config = Some(missing_config.clone());
+    let CanvasMode::EditForm(form) = conductor.begin_action(ResourceKind::Config, 0, None) else {
+        panic!("expected settings");
+    };
+    assert!(matches!(
+        conductor.submit_form(&form).await,
+        CanvasMode::Error(_)
+    ));
+    assert!(!missing_config.exists());
+    assert!(conductor.client.is_none());
 }

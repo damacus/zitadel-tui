@@ -1,3 +1,4 @@
+mod demo;
 mod forms;
 mod mutations;
 mod providers;
@@ -26,6 +27,7 @@ pub struct TuiConductor {
     setup_required: bool,
     client: Option<ZitadelClient>,
     app_records: Vec<Record>,
+    demo_apps: Vec<(&'static str, Record)>,
     user_records: Vec<Record>,
     idp_records: Vec<Record>,
     organization: Option<String>,
