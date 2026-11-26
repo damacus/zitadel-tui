@@ -1,6 +1,5 @@
-use crate::{
-    config::UserTemplate,
-    tui::{CanvasMode, ConfirmState, FormField, FormState, PendingAction, Record, ResourceKind},
+use crate::tui::{
+    CanvasMode, ConfirmState, FormField, FormState, PendingAction, Record, ResourceKind,
 };
 
 use super::{support::error_mode, TuiConductor};
@@ -12,6 +11,25 @@ impl TuiConductor {
         action_index: usize,
         selected_record: Option<&Record>,
     ) -> CanvasMode {
+        if resource == ResourceKind::Applications && self.project.is_empty() {
+            return error_mode(
+                "Select a project",
+                "Choose a project in the header to manage applications.",
+            );
+        }
+        if resource == ResourceKind::Applications
+            && self.client.as_ref().is_some_and(|client| {
+                client
+                    .granted_projects
+                    .iter()
+                    .any(|grant| grant.project_id == self.project)
+            })
+        {
+            return error_mode(
+                "Granted project",
+                "Switch to the owning organisation to manage applications.",
+            );
+        }
         match resource {
             ResourceKind::Applications => match action_index {
                 0 => CanvasMode::EditForm(FormState {
@@ -103,6 +121,69 @@ impl TuiConductor {
                         })
                         .collect(),
                 }),
+                4 => match selected_record {
+                    Some(record) => CanvasMode::EditForm(FormState {
+                        title: "Edit redirect URIs".to_string(),
+                        description: format!("Edit the callback URLs for {}.", record.name),
+                        submit_label: "[Enter] review changes".to_string(),
+                        selected_field: 0,
+                        pending: PendingAction::EditRedirectUris {
+                            original: record.redirect_uris.clone(),
+                            app_id: record.id.clone(),
+                            name: record.name.clone(),
+                        },
+                        fields: vec![text_field(
+                            "redirect_uris",
+                            "Redirect URIs",
+                            &record.redirect_uris.join(" "),
+                            "Separate callback URLs with spaces. Keep at least one URL.",
+                        )],
+                    }),
+                    None => error_mode("No application selected", "Choose an application first."),
+                },
+                6 => match selected_record {
+                    Some(record) => CanvasMode::EditForm(FormState {
+                        title: "Rename application".into(),
+                        description: format!(
+                            "Project {} · application {}",
+                            self.project, record.id
+                        ),
+                        submit_label: "[Enter] save name".into(),
+                        selected_field: 0,
+                        pending: PendingAction::RenameApplication {
+                            app_id: record.id.clone(),
+                        },
+                        fields: vec![text_field(
+                            "name",
+                            "Name",
+                            &record.name,
+                            "Application display name",
+                        )],
+                    }),
+                    None => error_mode("No application selected", "Choose an application first."),
+                },
+                5 => CanvasMode::EditForm(FormState {
+                    title: "Create native application".into(),
+                    description: format!("Project {}", self.project),
+                    submit_label: "[Enter] create native application".into(),
+                    selected_field: 0,
+                    pending: PendingAction::CreateNative,
+                    fields: vec![
+                        text_field("name", "Name", "", "Application name"),
+                        text_field(
+                            "redirect_uris",
+                            "Redirect URIs",
+                            "",
+                            "Optional comma-separated callback URLs",
+                        ),
+                        toggle_field(
+                            "device_code",
+                            "Device code",
+                            false,
+                            "Allow sign-in on a separate device",
+                        ),
+                    ],
+                }),
                 _ => CanvasMode::Browse,
             },
             ResourceKind::Users => match action_index {
@@ -178,13 +259,28 @@ impl TuiConductor {
                 }),
                 _ => CanvasMode::Browse,
             },
-            ResourceKind::Idps => CanvasMode::EditForm(FormState {
-                title: "Configure Google IDP".to_string(),
-                description: "Configure Google with manual credentials only.".to_string(),
-                submit_label: "[Enter] configure Google".to_string(),
+            ResourceKind::Idps if action_index == 0 => CanvasMode::EditForm(FormState {
+                title: "Add Google provider".into(),
+                description: "Create a Google provider in the chosen scope.".into(),
+                submit_label: "[Enter] add Google provider".into(),
                 selected_field: 0,
                 pending: PendingAction::ConfigureGoogleIdp,
                 fields: vec![
+                    choice_field(
+                        "scope",
+                        "Scope",
+                        "Choose scope",
+                        if self.organization.is_some() {
+                            vec![
+                                "Choose scope".into(),
+                                "Organization".into(),
+                                "Instance".into(),
+                            ]
+                        } else {
+                            vec!["Choose scope".into(), "Instance".into()]
+                        },
+                        "Choose the provider owner",
+                    ),
                     text_field("name", "Name", "Google", "Display name"),
                     text_field("client_id", "Client ID", "", "Google OAuth client ID"),
                     secret_field(
@@ -195,6 +291,9 @@ impl TuiConductor {
                     ),
                 ],
             }),
+            ResourceKind::Idps => {
+                error_mode("Edit Google provider", "Select a Google provider first.")
+            }
             ResourceKind::Auth => CanvasMode::Setup(FormState {
                 title: "Run setup".to_string(),
                 description: "Validate and save auth, host, project, and templates path."
@@ -207,7 +306,7 @@ impl TuiConductor {
                     text_field(
                         "project",
                         "Project",
-                        &self.project,
+                        self.config.project_id.as_deref().unwrap_or_default(),
                         "Optional default project",
                     ),
                     choice_field(
@@ -218,12 +317,8 @@ impl TuiConductor {
                         } else {
                             "PAT"
                         },
-                        vec![
-                            "PAT".to_string(),
-                            "Service account".to_string(),
-                            "OAuth device (placeholder)".to_string(),
-                        ],
-                        "PAT and service account are live in this slice.",
+                        vec!["PAT".to_string(), "Service account".to_string()],
+                        "Use a service account key or personal access token.",
                     ),
                     secret_field(
                         "token",
@@ -264,7 +359,12 @@ impl TuiConductor {
                     pending: PendingAction::SaveConfig,
                     fields: vec![
                         text_field("host", "Host", &self.host, "Saved Zitadel URL"),
-                        text_field("project", "Project", &self.project, "Saved default project"),
+                        text_field(
+                            "project",
+                            "Project",
+                            self.config.project_id.as_deref().unwrap_or_default(),
+                            "Saved default project",
+                        ),
                         text_field(
                             "templates_path",
                             "Templates path",
@@ -377,22 +477,4 @@ pub(crate) fn split_csv(input: &str) -> Vec<String> {
 
 pub(crate) fn checkbox_enabled(value: &str) -> bool {
     matches!(value, "true" | "1" | "yes" | "on")
-}
-
-pub(crate) async fn create_quick_user(
-    client: &crate::client::ZitadelClient,
-    user: UserTemplate,
-) -> anyhow::Result<Vec<String>> {
-    let mut lines = Vec::new();
-    let result = client
-        .create_human_user(&user.email, &user.first_name, &user.last_name, None)
-        .await?;
-    lines.push(format!("Created {}", user.email));
-    if user.admin {
-        if let Some(user_id) = result.get("userId").and_then(|value| value.as_str()) {
-            client.grant_iam_owner(user_id).await?;
-            lines.push(format!("Granted IAM_OWNER to {}", user.email));
-        }
-    }
-    Ok(lines)
 }

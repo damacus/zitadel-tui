@@ -96,7 +96,9 @@ browser, then the CLI stores the session in:
 ```
 
 If `--client-id` is omitted, `zitadel-tui` uses `device_client_id` from config.
-If that is also absent, it prompts for the client ID and saves it for later.
+Headless commands never prompt: when neither is set the command fails with a
+`usage` error. `apps create-native --device-code` saves the created client ID
+as `device_client_id` automatically.
 
 ## Check Current Authentication
 
@@ -107,10 +109,10 @@ resolves to:
 zitadel-tui --host https://zitadel.example.com auth status
 ```
 
-For machine-readable output:
+Output is always the JSON envelope, so the result is directly machine-readable:
 
 ```bash
-zitadel-tui --host https://zitadel.example.com --json auth status
+zitadel-tui --host https://zitadel.example.com auth status
 ```
 
 ## Log Out

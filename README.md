@@ -18,23 +18,14 @@ Current status:
 
 ## Features
 
-- **Applications**
-  - list OIDC applications
-  - create applications from flags or templates
-  - delete applications
-  - regenerate confidential client secrets
-  - quick setup from templates YAML
-
-- **Users**
-  - list users
-  - create human users
-  - create imported local admin users
-  - grant `IAM_OWNER`
-  - quick setup from templates YAML
-
-- **Identity Providers**
-  - list IDPs
-  - configure Google manually
+- **Applications** — Browse and rename apps in the selected project, create web and native OIDC apps,
+  review additions and removals to redirect URIs, rotate secrets and delete apps.
+- **Users** — Browse the selected organisation, create users, inspect project
+  roles, grant or revoke a role, unlock accounts and deactivate users.
+- **Identity providers** — Inspect provider ownership and effective sign-in status.
+  Create a Google provider or edit an existing one.
+- **Settings** — Edit the host, default project, administrative credentials and
+  templates path. Field help appears at the bottom of each form.
 
 - **Configuration and Auth**
   - TOML config in XDG config space
@@ -75,17 +66,29 @@ cargo install zitadel-tui
 zitadel-tui
 ```
 
+Click a tab or use **F1–F4** to switch sections. The header shows the current
+organisation and project. Click either name or press **F6** or **F7** to search
+the choices available to your credential. Selecting an organisation reloads its
+projects, users and identity providers.
+
+Press **/** to search the directory, **Enter** to open a record and **F5** to
+refresh. Wide terminals show details beside the list. Narrow terminals show
+them under the selected record. If you leave a changed form, you can keep
+editing or discard the draft.
+
 ### Headless mode
 
-Supplying a subcommand runs the existing one-shot command path. The deprecated
-`--once` flag is still accepted for compatibility, but is no longer required.
-`--once` on its own is invalid because there is no subcommand to run.
+Supplying a subcommand runs a one-shot command and prints a JSON envelope on
+stdout. Output is always JSON — there is no `--json` flag — and exit codes are
+meaningful:
 
-Use `--json` for machine-readable output.
+- `0`: success — `{"command":…,"ok":true,"result":…}`
+- `1`: command error — `{"command":…,"ok":false,"error":{"kind","message","details"?}}`
+- `2`: argument parse failure — clap usage text on stderr
 
 ```bash
 zitadel-tui apps list
-zitadel-tui --json auth status
+zitadel-tui auth status
 zitadel-tui apps create --name grafana --redirect-uris https://grafana.example.com/login/generic_oauth
 zitadel-tui users create-admin \
   --username admin \
@@ -97,6 +100,15 @@ zitadel-tui idps configure-google \
   --client-id google-client-id \
   --client-secret google-client-secret
 ```
+
+### Use by LLM agents
+
+The headless surface is designed for agents: every subcommand prints exactly
+one JSON envelope on stdout, `error.kind` is a typed classification
+(`usage`, `auth`, `not_found`, `ambiguous`, `api`, `config`, `io`), and no
+command ever prompts. `zitadel-tui agent` prints the full machine-readable
+contract (also at `docs/AGENT.md`), including the command map, selectors,
+auth precedence, and recipes.
 
 ### Global options
 
@@ -124,22 +136,28 @@ Example: `zitadel-tui --service-account-file ./service-account.json auth status`
 canonical XDG path.
 Example: `zitadel-tui --config ./config.toml`
 
-`--json`
-: Print JSON envelopes for headless commands.
-Example: `zitadel-tui --json config show`
-
-`--once`
-: Deprecated compatibility flag for one-shot subcommand execution. Subcommands
-now run one-shot without it.
-Example: `zitadel-tui --once users list`
+`--full`
+: Emit each item's raw API payload instead of the compact summary projection
+on `list` and `get` commands.
+Example: `zitadel-tui apps list --full`
 
 ### Command reference
 
 #### `apps`
 
 `apps list`
-: List OIDC applications for the active project.
+: List OIDC applications for the active project as summary projections
+(`--full` for raw payloads).
 Example: `zitadel-tui apps list`
+
+`--limit <LIMIT>`
+: Maximum number of items to return (1–1000, default 100). Available on all
+`list` commands.
+Example: `zitadel-tui apps list --limit 50`
+
+`apps get`
+: Fetch a single app by `--app-id` or `--name` (exactly one required).
+Example: `zitadel-tui apps get --name grafana`
 
 `apps create`
 : Create an OIDC application. Use either `--template <TEMPLATE>` or the manual
@@ -170,14 +188,21 @@ Example: `zitadel-tui apps create-native --name zitadel-tui --device-code`
 : Enable the Device Code grant for CLI login sessions. This also switches the generated client to JWT access tokens.
 
 `apps delete`
-: Delete an application by Zitadel app ID.
+: Delete an application selected by `--app-id` or `--name` (exactly one
+required).
 Example: `zitadel-tui apps delete --app-id 123456789012345678`
 
 `--app-id <APP_ID>`
-: Target application ID for `apps delete` and `apps regenerate-secret`.
+: Select the app by ID for `apps get`, `apps delete`, and
+`apps regenerate-secret`.
+
+`--name <NAME>`
+: Select the app by exact name for `apps get`, `apps delete`, and
+`apps regenerate-secret`.
 
 `apps regenerate-secret`
-: Regenerate a confidential client's secret.
+: Regenerate a confidential client's secret, selected by `--app-id` or
+`--name`. The new `clientSecret` is returned in the result.
 Example: `zitadel-tui apps regenerate-secret --app-id 123456789012345678`
 
 `--client-id <CLIENT_ID>`
@@ -195,8 +220,14 @@ Example: `zitadel-tui apps quick-setup --names grafana,mealie`
 #### `users`
 
 `users list`
-: List users.
+: List users as summary projections (`--full` for raw payloads, `--limit`
+for page size).
 Example: `zitadel-tui users list`
+
+`users get`
+: Fetch a single user by `--user-id`, `--username`, or `--email` (exactly
+one required).
+Example: `zitadel-tui users get --email admin@example.com`
 
 `users create`
 : Create a human user.
@@ -220,14 +251,22 @@ Example: `zitadel-tui users create --email alice@example.com --first-name Alice 
 Example: `zitadel-tui users create-admin --username admin --first-name Admin --last-name User --email admin@example.com --password 'change-me-now'`
 
 `--password <PASSWORD>`
-: Password for `users create-admin` in headless mode.
+: Password for `users create-admin` in headless mode. Also available as
+`ZITADEL_USER_PASSWORD`.
 
 `users grant-iam-owner`
-: Grant the `IAM_OWNER` role to an existing user.
+: Grant the `IAM_OWNER` role to a user selected by `--user-id`, `--username`,
+or `--email` (exactly one required).
 Example: `zitadel-tui users grant-iam-owner --user-id 123456789012345678`
 
 `--user-id <USER_ID>`
-: Target user ID for `users grant-iam-owner`.
+: Select the user by ID for `users get` and `users grant-iam-owner`.
+
+`--username <USERNAME>`
+: Select the user by exact username or login name.
+
+`--email <EMAIL>`
+: Select the user by exact email address.
 
 `users quick-setup`
 : Create every user from the YAML templates file. This command has no
@@ -237,8 +276,14 @@ Example: `zitadel-tui users quick-setup`
 #### `idps`
 
 `idps list`
-: List configured identity providers.
+: List configured identity providers as summary projections (`--full` for
+raw payloads, `--limit` for page size).
 Example: `zitadel-tui idps list`
+
+`idps get`
+: Fetch a single identity provider by `--idp-id` or `--name` (exactly one
+required).
+Example: `zitadel-tui idps get --name Google`
 
 `idps configure-google`
 : Create a Google identity provider. In headless mode `--client-secret` is
@@ -249,10 +294,18 @@ Example: `zitadel-tui idps configure-google --client-id google-client-id --clien
 : Google OAuth client ID.
 
 `--client-secret <CLIENT_SECRET>`
-: Google OAuth client secret. Required in headless mode.
+: Google OAuth client secret. Required in headless mode. Also available as
+`ZITADEL_GOOGLE_CLIENT_SECRET`.
 
 `--name <NAME>`
 : Display name for the provider. Defaults to `Google`.
+
+#### `projects`
+
+`projects list`
+: List projects visible to the credential as summary projections (`--full`
+for raw payloads, `--limit` for page size).
+Example: `zitadel-tui projects list`
 
 #### `auth`
 
@@ -268,9 +321,10 @@ API operations.
 Example: `zitadel-tui --host https://zitadel.example.com auth login`
 
 `--client-id <CLIENT_ID>`
-: The Zitadel native app client ID. If omitted and not set in config, the
-command prompts interactively and saves the value to config for future use.
-Also available as `device_client_id` in config.
+: The Zitadel native app client ID. Required when `device_client_id` is not
+set in config — headless commands never prompt, so a missing client ID is a
+`usage` error. `apps create-native --device-code` saves the created client
+ID as `device_client_id` automatically.
 
 `auth logout`
 : Remove the stored session token. Subsequent commands will require explicit
@@ -280,7 +334,7 @@ Example: `zitadel-tui auth logout`
 `auth status`
 : Resolve credentials, authenticate, and report the active auth source plus the
 current user identity. Works with any credential source including a cached session token.
-Example: `zitadel-tui --json auth status`
+Example: `zitadel-tui auth status`
 
 #### `config`
 
@@ -288,6 +342,13 @@ Example: `zitadel-tui --json auth status`
 : Print the active runtime configuration with secrets redacted. This command
 has no command-specific flags.
 Example: `zitadel-tui config show`
+
+#### `agent`
+
+`agent`
+: Print the LLM agent guide (`docs/AGENT.md`) verbatim to stdout. Unlike API
+commands the output is plain markdown, not the JSON envelope.
+Example: `zitadel-tui agent`
 
 ## Configuration
 

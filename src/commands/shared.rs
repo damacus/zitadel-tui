@@ -1,8 +1,20 @@
-use anyhow::{Context, Result};
+use serde_json::Value;
 
-use crate::{auth::resolve_access_token, cli::Cli, client::ZitadelClient, config::AppConfig};
+use crate::{
+    api::{client::ZitadelClient, models::Summarize},
+    auth::resolve_access_token,
+    cli::Cli,
+    config::AppConfig,
+    error::CommandError,
+};
 
-pub async fn authenticated_client(args: &Cli, config: &AppConfig) -> Result<ZitadelClient> {
+/// Builds an API client, mapping failures to contract error kinds: a
+/// missing Zitadel URL is `Usage`, credential resolution is `Auth`, and
+/// anything else falls back to `Api` via `From<anyhow::Error>`.
+pub async fn authenticated_client(
+    args: &Cli,
+    config: &AppConfig,
+) -> Result<ZitadelClient, CommandError> {
     let host = resolved_host(args, config)?;
     let http = reqwest::Client::new();
     let auth = resolve_access_token(
@@ -12,50 +24,58 @@ pub async fn authenticated_client(args: &Cli, config: &AppConfig) -> Result<Zita
         args.service_account_file.clone(),
         config,
     )
-    .await?;
-    auth.ensure_api_credential()?;
-    ZitadelClient::new(host, auth.token)
+    .await
+    .map_err(|error| CommandError::auth(error.to_string()))?;
+    auth.ensure_api_credential()
+        .map_err(|error| CommandError::auth(error.to_string()))?;
+    ZitadelClient::new(host, auth.token).map_err(CommandError::from)
 }
 
-pub fn resolved_host(args: &Cli, config: &AppConfig) -> Result<String> {
+/// Serializes a fetched list for the envelope: compact summary projections
+/// by default, each model's verbatim `raw` API payload under `--full`.
+/// Single switch for every list command so the flag behaves consistently.
+pub fn list_result<T: Summarize>(items: &[T], full: bool) -> Result<Value, CommandError> {
+    if full {
+        return Ok(serde_json::to_value(
+            items.iter().map(T::raw).collect::<Vec<_>>(),
+        )?);
+    }
+    Ok(serde_json::to_value(
+        items.iter().map(T::summary).collect::<Vec<_>>(),
+    )?)
+}
+
+/// Serializes a single resolved item for `get` commands: the compact
+/// summary projection by default, the retained raw API payload under
+/// `--full` — the same switch [`list_result`] uses.
+pub fn get_result<T: Summarize>(item: &T, full: bool) -> Result<Value, CommandError> {
+    if full {
+        return Ok(item.raw().clone());
+    }
+    Ok(serde_json::to_value(item.summary())?)
+}
+
+pub fn resolved_host(args: &Cli, config: &AppConfig) -> Result<String, CommandError> {
     args.host
         .clone()
         .or_else(|| config.zitadel_url.clone())
-        .context("Zitadel URL is required via --host, ZITADEL_URL, or config")
+        .ok_or_else(|| {
+            CommandError::usage("Zitadel URL is required via --host, ZITADEL_URL, or config")
+        })
 }
 
-pub fn resolved_host_or_cache(args: &Cli, config: &AppConfig) -> Result<String> {
+pub fn resolved_host_or_cache(args: &Cli, config: &AppConfig) -> Result<String, CommandError> {
     resolved_host(args, config).or_else(|_| {
         crate::token_cache::TokenCache::load()
             .ok()
             .flatten()
             .map(|cache| cache.host)
-            .context(
-                "Zitadel URL is required via --host, ZITADEL_URL, config, or a cached login session",
-            )
+            .ok_or_else(|| {
+                CommandError::usage(
+                    "Zitadel URL is required via --host, ZITADEL_URL, config, or a cached login session",
+                )
+            })
     })
-}
-
-pub async fn resolved_project_id(
-    client: &ZitadelClient,
-    args: &Cli,
-    config: &AppConfig,
-) -> Result<String> {
-    if let Some(project_id) = args
-        .project_id
-        .clone()
-        .or_else(|| config.project_id.clone())
-    {
-        return Ok(project_id);
-    }
-
-    client
-        .get_default_project()
-        .await?
-        .get("id")
-        .and_then(|value| value.as_str())
-        .map(ToOwned::to_owned)
-        .context("failed to determine default project id")
 }
 
 #[cfg(test)]
@@ -139,12 +159,11 @@ mod tests {
         let _guard = crate::test_support::env_lock();
         let original = clear_host_env();
         let args = Cli::parse_from(["zitadel-tui"]);
-        let error = resolved_host(&args, &AppConfig::default())
-            .unwrap_err()
-            .to_string();
+        let error = resolved_host(&args, &AppConfig::default()).unwrap_err();
 
         restore_host_env(original);
-        assert!(error.contains("Zitadel URL is required"));
+        assert_eq!(error.kind, crate::error::ErrorKind::Usage);
+        assert!(error.to_string().contains("Zitadel URL is required"));
     }
 
     #[allow(clippy::await_holding_lock)]
@@ -176,7 +195,7 @@ mod tests {
         let args = Cli::parse_from(["zitadel-tui", "--host", "https://zitadel.example.com"]);
         let error = match authenticated_client(&args, &AppConfig::default()).await {
             Ok(_) => panic!("expected OIDC session token to be rejected for API commands"),
-            Err(error) => error.to_string(),
+            Err(error) => error,
         };
 
         env::remove_var("ZITADEL_TUI_TOKEN_CACHE");
@@ -189,8 +208,10 @@ mod tests {
             env::set_var("ZITADEL_SERVICE_ACCOUNT_FILE", path);
         }
 
-        assert!(error.contains("requires Zitadel API credentials"));
-        assert!(error.contains("auth status"));
-        assert!(error.contains("personal access token"));
+        assert_eq!(error.kind, crate::error::ErrorKind::Auth);
+        let message = error.to_string();
+        assert!(message.contains("requires Zitadel API credentials"));
+        assert!(message.contains("auth status"));
+        assert!(message.contains("personal access token"));
     }
 }

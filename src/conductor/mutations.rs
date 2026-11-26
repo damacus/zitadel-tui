@@ -1,19 +1,17 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use anyhow::Result;
 use reqwest::Client as HttpClient;
-use serde_json::Value;
 
 use crate::{
-    auth::resolve_access_token,
+    auth::exchange_service_account,
     config::{AppTemplate, UserTemplate},
+    ops,
     tui::{CanvasMode, FormState, MessageState, PendingAction},
 };
 
 use super::{
-    forms::{
-        bool_value, checkbox_enabled, create_quick_user, form_value, optional_value, split_csv,
-    },
+    forms::{bool_value, checkbox_enabled, form_value, optional_value, split_csv},
     records::app_creation_summary,
     support::error_mode,
     TuiConductor,
@@ -23,14 +21,109 @@ impl TuiConductor {
     pub async fn submit_form(&mut self, form: &FormState) -> CanvasMode {
         match &form.pending {
             PendingAction::CreateApplication => self.create_application(form).await,
+            PendingAction::EditRedirectUris {
+                app_id,
+                name,
+                original,
+            } => {
+                let mut desired = Vec::new();
+                for uri in form_value(form, "redirect_uris")
+                    .split_whitespace()
+                    .map(str::to_owned)
+                {
+                    if !desired.contains(&uri) {
+                        desired.push(uri);
+                    }
+                }
+                let mut diff = vec![];
+                for uri in original.iter().filter(|u| !desired.contains(u)) {
+                    diff.push(format!("Remove  {uri}"));
+                }
+                for uri in desired.iter().filter(|u| !original.contains(u)) {
+                    diff.push(format!("Add     {uri}"));
+                }
+                if diff.is_empty() {
+                    return CanvasMode::Success(MessageState {
+                        title: "No redirect URI changes".into(),
+                        lines: vec![name.clone()],
+                    });
+                }
+                if desired.is_empty() {
+                    return error_mode(
+                        "Keep at least one callback",
+                        "This Zitadel API cannot clear the final redirect URI.",
+                    );
+                }
+                CanvasMode::Confirm(crate::tui::ConfirmState {
+                    title: format!("Review redirect URIs for {name}"),
+                    lines: diff,
+                    submit_label: "[Enter] apply changes".into(),
+                    pending: PendingAction::ApplyRedirectUris {
+                        app_id: app_id.clone(),
+                        original: original.clone(),
+                        desired,
+                    },
+                })
+            }
+            PendingAction::RenameApplication { app_id } => {
+                let Some(client) = &self.client else {
+                    return error_mode("Authentication required", "Run setup first.");
+                };
+                let name = form_value(form, "name").trim().to_owned();
+                let result = client
+                    .rename_application(&self.project, app_id, &name)
+                    .await;
+                self.finish_simple_mutation(result, "Application renamed", vec![name])
+                    .await
+            }
+            PendingAction::CreateNative => {
+                let Some(client) = &self.client else {
+                    return error_mode("Authentication required", "Run setup first.");
+                };
+                let name = form_value(form, "name");
+                if name.trim().is_empty() {
+                    return error_mode("Name required", "Enter an application name.");
+                }
+                let redirects = split_csv(&form_value(form, "redirect_uris"));
+                match client
+                    .create_native_app_with_redirects(
+                        &self.project,
+                        &name,
+                        bool_value(form, "device_code"),
+                        &redirects,
+                    )
+                    .await
+                {
+                    Ok(result) => {
+                        self.refresh_runtime().await;
+                        CanvasMode::Success(MessageState {
+                            title: "Native application created".into(),
+                            lines: vec![format!(
+                                "Client ID: {}",
+                                result.client_id.unwrap_or_default()
+                            )],
+                        })
+                    }
+                    Err(error) => {
+                        error_mode("Create native application failed", &error.to_string())
+                    }
+                }
+            }
             PendingAction::QuickSetupApplications => self.quick_setup_apps(form).await,
             PendingAction::CreateUser => self.create_user(form).await,
             PendingAction::CreateAdminUser => self.create_admin_user(form).await,
             PendingAction::QuickSetupUsers => self.quick_setup_users(form).await,
-            PendingAction::ConfigureGoogleIdp => self.configure_google(form).await,
+            PendingAction::UserRole { .. } => Self::review_user_role(form),
+            PendingAction::UserLifecycle { .. } => {
+                error_mode("Review required", "Confirm the selected user action.")
+            }
+            PendingAction::ConfigureGoogleIdp | PendingAction::EditGoogleIdp { .. } => {
+                self.submit_google(form).await
+            }
             PendingAction::ValidateAuthSetup => self.validate_and_save_setup(form).await,
             PendingAction::SaveConfig => self.save_config_form(form).await,
-            PendingAction::DeleteApplication { .. }
+            PendingAction::ApplyRedirectUris { .. }
+            | PendingAction::DeleteApplication { .. }
             | PendingAction::RegenerateSecret { .. }
             | PendingAction::GrantIamOwner { .. } => error_mode(
                 "Invalid form state",
@@ -41,9 +134,26 @@ impl TuiConductor {
 
     pub async fn confirm(&mut self, pending: PendingAction) -> CanvasMode {
         match pending {
+            action @ (PendingAction::UserRole { .. } | PendingAction::UserLifecycle { .. }) => {
+                self.confirm_user_access(action).await
+            }
+            PendingAction::ApplyRedirectUris {
+                app_id,
+                original,
+                desired,
+            } => {
+                let Some(client) = &self.client else {
+                    return error_mode("Authentication required", "Run setup first.");
+                };
+                let result = client
+                    .replace_redirect_uris(&self.project, &app_id, &original, &desired)
+                    .await;
+                self.finish_simple_mutation(result, "Redirect URIs updated", desired)
+                    .await
+            }
             PendingAction::DeleteApplication { app_id, name } => match self.client.as_ref() {
                 Some(client) => {
-                    let result = client.delete_app(&self.project, &app_id).await;
+                    let result = ops::apps::delete(client, &self.project, &app_id).await;
                     self.finish_simple_mutation(
                         result,
                         "Application deleted",
@@ -59,7 +169,7 @@ impl TuiConductor {
                 client_id,
             } => match self.client.as_ref() {
                 Some(client) => {
-                    let result = client.regenerate_secret(&self.project, &app_id).await;
+                    let result = ops::apps::regenerate_secret(client, &self.project, &app_id).await;
                     match result {
                         Ok(value) => {
                             self.refresh_runtime().await;
@@ -70,10 +180,7 @@ impl TuiConductor {
                                     format!("Client ID: {client_id}"),
                                     format!(
                                         "Client Secret: {}",
-                                        value
-                                            .get("clientSecret")
-                                            .and_then(|item| item.as_str())
-                                            .unwrap_or("missing")
+                                        value.client_secret.as_deref().unwrap_or("missing")
                                     ),
                                     "This secret is only shown once.".to_string(),
                                 ],
@@ -86,7 +193,7 @@ impl TuiConductor {
             },
             PendingAction::GrantIamOwner { user_id, username } => match self.client.as_ref() {
                 Some(client) => {
-                    let result = client.grant_iam_owner(&user_id).await;
+                    let result = ops::users::grant_iam_owner(client, &user_id).await;
                     self.finish_simple_mutation(
                         result,
                         "IAM_OWNER granted",
@@ -100,11 +207,15 @@ impl TuiConductor {
                 None => error_mode("Authentication required", "Run setup first."),
             },
             PendingAction::CreateApplication
+            | PendingAction::EditRedirectUris { .. }
+            | PendingAction::RenameApplication { .. }
+            | PendingAction::CreateNative
             | PendingAction::QuickSetupApplications
             | PendingAction::CreateUser
             | PendingAction::CreateAdminUser
             | PendingAction::QuickSetupUsers
             | PendingAction::ConfigureGoogleIdp
+            | PendingAction::EditGoogleIdp { .. }
             | PendingAction::ValidateAuthSetup
             | PendingAction::SaveConfig => error_mode(
                 "Invalid confirmation state",
@@ -113,9 +224,9 @@ impl TuiConductor {
         }
     }
 
-    async fn finish_simple_mutation(
+    pub(super) async fn finish_simple_mutation<T>(
         &mut self,
-        result: Result<Value>,
+        result: Result<T>,
         title: &str,
         lines: Vec<String>,
     ) -> CanvasMode {
@@ -148,14 +259,14 @@ impl TuiConductor {
             } else {
                 manual_name
             };
-            client
-                .create_oidc_app(
-                    &self.project,
-                    &resolved_name,
-                    template.redirect_uris.clone(),
-                    template.public,
-                )
-                .await
+            ops::apps::create_oidc(
+                client,
+                &self.project,
+                &resolved_name,
+                template.redirect_uris.clone(),
+                template.public,
+            )
+            .await
         } else {
             let name = form_value(form, "name");
             let redirect_uris = split_csv(&form_value(form, "redirect_uris"));
@@ -165,14 +276,14 @@ impl TuiConductor {
                     "Name and redirect URIs are required for manual application creation.",
                 );
             }
-            client
-                .create_oidc_app(
-                    &self.project,
-                    &name,
-                    redirect_uris,
-                    bool_value(form, "public"),
-                )
-                .await
+            ops::apps::create_oidc(
+                client,
+                &self.project,
+                &name,
+                redirect_uris,
+                bool_value(form, "public"),
+            )
+            .await
         };
 
         match result {
@@ -180,12 +291,9 @@ impl TuiConductor {
                 self.refresh_runtime().await;
                 let mut lines = vec![format!(
                     "Client ID: {}",
-                    value
-                        .get("clientId")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("missing")
+                    value.client_id.as_deref().unwrap_or("missing")
                 )];
-                if let Some(secret) = value.get("clientSecret").and_then(|v| v.as_str()) {
+                if let Some(secret) = value.client_secret.as_deref() {
                     lines.push(format!("Client Secret: {secret}"));
                     lines.push("This secret is only shown once.".to_string());
                 }
@@ -202,89 +310,34 @@ impl TuiConductor {
         let Some(client) = self.client.as_ref() else {
             return error_mode("Authentication required", "Run setup first.");
         };
-        let selected_templates: Vec<(String, AppTemplate)> = form
+        let mut selected: BTreeMap<String, AppTemplate> = BTreeMap::new();
+        let mut names = Vec::new();
+        for field in form
             .fields
             .iter()
             .filter(|field| checkbox_enabled(&field.value))
-            .filter_map(|field| {
-                self.templates
-                    .apps
-                    .get(&field.label)
-                    .cloned()
-                    .map(|template| (field.label.clone(), template))
-            })
-            .collect();
-
-        let mut created = Vec::new();
-        for chunk in selected_templates.chunks(2) {
-            match chunk {
-                [first] => match client
-                    .create_oidc_app(
-                        &self.project,
-                        &first.0,
-                        first.1.redirect_uris.clone(),
-                        first.1.public,
-                    )
-                    .await
-                {
-                    Ok(value) => created.push(app_creation_summary(&first.0, &value)),
-                    Err(error) => {
-                        return error_mode(
-                            "Quick setup failed",
-                            &format!("{} failed: {}", first.0, error),
-                        )
-                    }
-                },
-                [first, second] => {
-                    let first_name = first.0.clone();
-                    let first_template = first.1.clone();
-                    let second_name = second.0.clone();
-                    let second_template = second.1.clone();
-                    let (first_result, second_result) = tokio::join!(
-                        client.create_oidc_app(
-                            &self.project,
-                            &first_name,
-                            first_template.redirect_uris.clone(),
-                            first_template.public,
-                        ),
-                        client.create_oidc_app(
-                            &self.project,
-                            &second_name,
-                            second_template.redirect_uris.clone(),
-                            second_template.public,
-                        ),
-                    );
-                    let first_value = match first_result {
-                        Ok(value) => value,
-                        Err(error) => {
-                            return error_mode(
-                                "Quick setup failed",
-                                &format!("{} failed: {}", first_name, error),
-                            )
-                        }
-                    };
-                    let second_value = match second_result {
-                        Ok(value) => value,
-                        Err(error) => {
-                            return error_mode(
-                                "Quick setup failed",
-                                &format!("{} failed: {}", second_name, error),
-                            )
-                        }
-                    };
-                    created.push(app_creation_summary(&first_name, &first_value));
-                    created.push(app_creation_summary(&second_name, &second_value));
-                }
-                _ => unreachable!("chunks(2) yields at most two items"),
+        {
+            if let Some(template) = self.templates.apps.get(&field.label) {
+                names.push(field.label.clone());
+                selected.insert(field.label.clone(), template.clone());
             }
         }
+
+        let created = match ops::apps::quick_setup(client, &self.project, &selected, &names).await {
+            Ok(created) => created,
+            Err(error) => return error_mode("Quick setup failed", &error.to_string()),
+        };
         self.refresh_runtime().await;
         CanvasMode::Success(MessageState {
             title: "Quick setup complete".to_string(),
             lines: if created.is_empty() {
                 vec!["No application templates were selected.".to_string()]
             } else {
-                created
+                names
+                    .iter()
+                    .zip(created.iter())
+                    .map(|(name, result)| app_creation_summary(name, result))
+                    .collect()
             },
         })
     }
@@ -303,14 +356,14 @@ impl TuiConductor {
             );
         }
 
-        match client
-            .create_human_user(
-                &email,
-                &first_name,
-                &last_name,
-                optional_value(form, "username").as_deref(),
-            )
-            .await
+        match ops::users::create_human(
+            client,
+            &email,
+            &first_name,
+            &last_name,
+            optional_value(form, "username").as_deref(),
+        )
+        .await
         {
             Ok(value) => {
                 self.refresh_runtime().await;
@@ -318,10 +371,7 @@ impl TuiConductor {
                     title: "User created".to_string(),
                     lines: vec![format!(
                         "User ID: {}",
-                        value
-                            .get("userId")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("missing")
+                        value.user_id.as_deref().unwrap_or("missing")
                     )],
                 })
             }
@@ -350,9 +400,16 @@ impl TuiConductor {
             );
         }
 
-        match client
-            .import_human_user(&username, &first_name, &last_name, &email, &password, true)
-            .await
+        match ops::users::import_admin(
+            client,
+            &username,
+            &first_name,
+            &last_name,
+            &email,
+            &password,
+            true,
+        )
+        .await
         {
             Ok(_) => {
                 self.refresh_runtime().await;
@@ -382,45 +439,15 @@ impl TuiConductor {
             .filter_map(|(index, _)| self.templates.users.get(index).cloned())
             .collect();
 
+        let created = match ops::users::quick_setup(client, selected_users).await {
+            Ok(created) => created,
+            Err(error) => return error_mode("Quick setup failed", &error.to_string()),
+        };
         let mut lines = Vec::new();
-        for chunk in selected_users.chunks(2) {
-            match chunk {
-                [first] => match create_quick_user(client, first.clone()).await {
-                    Ok(mut created_lines) => lines.append(&mut created_lines),
-                    Err(error) => {
-                        return error_mode(
-                            "Quick setup failed",
-                            &format!("Failed to create {}: {}", first.email, error),
-                        )
-                    }
-                },
-                [first, second] => {
-                    let first_user = first.clone();
-                    let second_user = second.clone();
-                    let (first_result, second_result) = tokio::join!(
-                        create_quick_user(client, first_user),
-                        create_quick_user(client, second_user),
-                    );
-                    match first_result {
-                        Ok(mut created_lines) => lines.append(&mut created_lines),
-                        Err(error) => {
-                            return error_mode(
-                                "Quick setup failed",
-                                &format!("Failed to create {}: {}", first.email, error),
-                            )
-                        }
-                    }
-                    match second_result {
-                        Ok(mut created_lines) => lines.append(&mut created_lines),
-                        Err(error) => {
-                            return error_mode(
-                                "Quick setup failed",
-                                &format!("Failed to create {}: {}", second.email, error),
-                            )
-                        }
-                    }
-                }
-                _ => unreachable!("chunks(2) yields at most two items"),
+        for outcome in &created {
+            lines.push(format!("Created {}", outcome.email));
+            if outcome.iam_owner_granted {
+                lines.push(format!("Granted IAM_OWNER to {}", outcome.email));
             }
         }
         self.refresh_runtime().await;
@@ -434,53 +461,12 @@ impl TuiConductor {
         })
     }
 
-    async fn configure_google(&mut self, form: &FormState) -> CanvasMode {
-        let Some(client) = self.client.as_ref() else {
-            return error_mode("Authentication required", "Run setup first.");
-        };
-        let name = form_value(form, "name");
-        let client_id = form_value(form, "client_id");
-        let client_secret = form_value(form, "client_secret");
-        if client_id.is_empty() || client_secret.is_empty() {
-            return error_mode(
-                "Missing Google credentials",
-                "Client ID and client secret are required for Google IDP setup.",
-            );
-        }
-        match client
-            .add_google_idp(&client_id, &client_secret, &name)
-            .await
-        {
-            Ok(value) => {
-                self.refresh_runtime().await;
-                CanvasMode::Success(MessageState {
-                    title: "Google IDP configured".to_string(),
-                    lines: vec![format!(
-                        "IDP ID: {}",
-                        value
-                            .get("id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("missing")
-                    )],
-                })
-            }
-            Err(error) => error_mode("Configure Google failed", &error.to_string()),
-        }
-    }
-
     async fn validate_and_save_setup(&mut self, form: &FormState) -> CanvasMode {
         let host = form_value(form, "host");
         if host.is_empty() {
             return error_mode("Missing host", "Host is required.");
         }
         let auth_method = form_value(form, "auth_method");
-        if auth_method == "OAuth device (placeholder)" {
-            return error_mode(
-                "OAuth device flow not implemented",
-                "Use PAT or service account in this migration slice.",
-            );
-        }
-
         let mut config = self.config.clone();
         config.zitadel_url = Some(host.clone());
         config.project_id = optional_value(form, "project");
@@ -517,19 +503,32 @@ impl TuiConductor {
             config.service_account_file = Some(path);
         }
 
-        let http = HttpClient::new();
-        match resolve_access_token(&http, &host, cli_token, cli_service_account, &config).await {
-            Ok(_) => match config.save_to_canonical_path() {
-                Ok(_) => {
+        let validate = async {
+            let token = match (cli_token, cli_service_account) {
+                (Some(token), _) => token,
+                (_, Some(path)) => {
+                    exchange_service_account(&HttpClient::new(), &host, path).await?
+                }
+                _ => anyhow::bail!("Select an administrative credential."),
+            };
+            crate::api::client::ZitadelClient::new(host.clone(), token)?
+                .whoami()
+                .await
+        };
+        match validate.await {
+            Ok(_) => match config.save_for_session(self.cli.config.as_deref()) {
+                Ok(path) => {
                     self.config = config;
                     self.templates = self.config.templates().unwrap_or_default();
+                    self.organization = None;
+                    self.project.clear();
                     self.host = host;
                     self.refresh_runtime().await;
                     CanvasMode::Success(MessageState {
                         title: "Setup validated".to_string(),
                         lines: vec![
                             "Credentials validated successfully.".to_string(),
-                            "Canonical TOML config was updated.".to_string(),
+                            format!("Saved to {}", path.display()),
                         ],
                     })
                 }
@@ -540,22 +539,30 @@ impl TuiConductor {
     }
 
     async fn save_config_form(&mut self, form: &FormState) -> CanvasMode {
-        self.config.zitadel_url = optional_value(form, "host");
-        self.config.project_id = optional_value(form, "project");
-        self.config.apps_config_file = optional_value(form, "templates_path").map(PathBuf::from);
-        match self.config.save_to_canonical_path() {
+        let Some(host) = optional_value(form, "host") else {
+            return error_mode("Missing host", "Host is required.");
+        };
+        let mut config = self.config.clone();
+        config.zitadel_url = Some(host);
+        config.project_id = optional_value(form, "project");
+        config.apps_config_file = optional_value(form, "templates_path").map(PathBuf::from);
+        match config.save_for_session(self.cli.config.as_deref()) {
             Ok(path) => {
+                let host_changed = config.zitadel_url.as_deref() != Some(self.host.as_str());
+                if host_changed {
+                    self.organization = None;
+                    self.host = config.zitadel_url.clone().unwrap_or_default();
+                }
+                if host_changed || config.project_id != self.config.project_id {
+                    self.project = self
+                        .cli
+                        .project_id
+                        .clone()
+                        .or_else(|| config.project_id.clone())
+                        .unwrap_or_default();
+                }
+                self.config = config;
                 self.templates = self.config.templates().unwrap_or_default();
-                self.host = self
-                    .config
-                    .zitadel_url
-                    .clone()
-                    .unwrap_or_else(|| self.host.clone());
-                self.project = self
-                    .config
-                    .project_id
-                    .clone()
-                    .unwrap_or_else(|| self.project.clone());
                 self.refresh_runtime().await;
                 CanvasMode::Success(MessageState {
                     title: "Config saved".to_string(),

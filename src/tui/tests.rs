@@ -1,5 +1,4 @@
 use super::{
-    copy::{focus_label, pending_label, resource_label, selection_title, status_mark},
     render::{canvas_lines, canvas_title},
     state::{cycle_choice, is_enabled, toggle_field},
     types::{
@@ -11,6 +10,14 @@ use super::{
 
 fn test_app() -> App {
     App::from_bootstrap(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "PAT".to_string(),
@@ -19,41 +26,14 @@ fn test_app() -> App {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        idp_error: None,
     })
 }
 
 #[test]
-fn focus_cycles_forward() {
+fn enter_opens_section_then_runs_selected_action() {
     let mut app = test_app();
-    app.advance_focus();
-    assert_eq!(app.focus, Focus::Actions);
-    app.advance_focus();
-    assert_eq!(app.focus, Focus::Resources);
-}
-
-#[test]
-fn toggles_inspector_popup() {
-    let mut app = test_app();
-    assert!(!app.show_inspector);
-    app.toggle_inspector();
-    assert!(app.show_inspector);
-}
-
-#[test]
-fn action_navigation_tracks_current_resource() {
-    let mut app = test_app();
-    app.next_action();
-    assert_eq!(
-        app.actions()[app.selected_action].label,
-        "Regenerate secret"
-    );
-    app.next_resource();
-    assert_eq!(app.actions()[app.selected_action].label, "Create user");
-}
-
-#[test]
-fn enter_in_browse_mode_returns_begin_action_command() {
-    let mut app = test_app();
+    app.handle_key(crossterm::event::KeyCode::Enter);
     assert_eq!(
         app.handle_key(crossterm::event::KeyCode::Enter),
         AppCommand::BeginAction {
@@ -65,80 +45,16 @@ fn enter_in_browse_mode_returns_begin_action_command() {
 }
 
 #[test]
-fn focus_cycles_backward() {
-    let mut app = test_app();
-    app.reverse_focus();
-    assert_eq!(app.focus, Focus::Actions);
-    app.reverse_focus();
-    assert_eq!(app.focus, Focus::Resources);
-}
-
-#[test]
-fn focus_cycles_form_first_when_modal_is_open() {
-    let mut app = App::from_bootstrap(TuiBootstrap {
-        host: "https://zitadel.example.com".to_string(),
-        project: "core".to_string(),
-        auth_label: "PAT".to_string(),
-        templates_path: None,
-        setup_required: false,
-        app_records: vec![Record {
-            id: "app-1".to_string(),
-            name: "grafana".to_string(),
-            kind: "public".to_string(),
-            summary: String::new(),
-            detail: String::new(),
-            changed_at: String::new(),
-        }],
-        user_records: vec![],
-        idp_records: vec![],
-    });
-    app.set_canvas_mode(CanvasMode::EditForm(FormState {
-        title: "Edit".to_string(),
-        description: String::new(),
-        submit_label: String::new(),
-        fields: vec![FormField {
-            key: "name",
-            label: "Name".to_string(),
-            value: String::new(),
-            kind: FieldKind::Text,
-            help: String::new(),
-            cursor: 0,
-        }],
-        selected_field: 0,
-        pending: PendingAction::SaveConfig,
-    }));
-
-    assert_eq!(app.focus, Focus::Form);
-    app.advance_focus();
-    assert_eq!(app.focus, Focus::Resources);
-    app.advance_focus();
-    assert_eq!(app.focus, Focus::Actions);
-    app.advance_focus();
-    assert_eq!(app.focus, Focus::Records);
-    app.advance_focus();
-    assert_eq!(app.focus, Focus::Form);
-}
-
-#[test]
-fn resource_navigation_wraps_and_resets_selection() {
-    let mut app = test_app();
-    app.selected_action = 2;
-    app.selected_record = 1;
-
-    app.next_resource();
-    assert_eq!(app.active_resource(), ResourceKind::Users);
-    assert_eq!(app.selected_action, 0);
-    assert_eq!(app.selected_record, 0);
-
-    app.previous_resource();
-    assert_eq!(app.active_resource(), ResourceKind::Applications);
-    assert_eq!(app.selected_action, 0);
-    assert_eq!(app.selected_record, 0);
-}
-
-#[test]
 fn empty_bootstrap_keeps_empty_records() {
     let app = App::from_bootstrap(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "PAT".to_string(),
@@ -147,21 +63,26 @@ fn empty_bootstrap_keeps_empty_records() {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        idp_error: None,
     });
 
     assert!(app.app_records.is_empty());
     assert!(app.user_records.is_empty());
     assert!(app.idp_records.is_empty());
-    assert_eq!(app.resources[0].count, "0");
-    assert_eq!(app.resources[1].count, "0");
-    assert_eq!(app.resources[2].count, "0");
     assert!(matches!(app.canvas_mode, CanvasMode::Browse));
-    assert!(app.selected_record().is_none());
 }
 
 #[test]
 fn setup_mode_uses_setup_form() {
     let app = App::from_bootstrap(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "Setup required".to_string(),
@@ -170,6 +91,7 @@ fn setup_mode_uses_setup_form() {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        idp_error: None,
     });
 
     assert!(matches!(app.canvas_mode, CanvasMode::Setup(_)));
@@ -179,6 +101,14 @@ fn setup_mode_uses_setup_form() {
 fn form_editing_changes_selected_field() {
     let mut app = test_app();
     let mut form = default_setup_form(&TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "PAT".to_string(),
@@ -187,6 +117,7 @@ fn form_editing_changes_selected_field() {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        idp_error: None,
     });
     form.selected_field = 3;
     app.set_canvas_mode(CanvasMode::Setup(form));
@@ -201,6 +132,14 @@ fn form_editing_changes_selected_field() {
 fn form_toggle_and_choice_cycle() {
     let mut app = test_app();
     let mut form = default_setup_form(&TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "PAT".to_string(),
@@ -209,6 +148,7 @@ fn form_toggle_and_choice_cycle() {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        idp_error: None,
     });
 
     form.selected_field = 2;
@@ -223,7 +163,7 @@ fn form_toggle_and_choice_cycle() {
     let CanvasMode::Setup(form) = &app.canvas_mode else {
         panic!("expected setup mode");
     };
-    assert_eq!(form.fields[2].value, "OAuth device (placeholder)");
+    assert_eq!(form.fields[2].value, "PAT");
 
     app.form_toggle_or_cycle(false);
     let CanvasMode::Setup(form) = &app.canvas_mode else {
@@ -235,6 +175,14 @@ fn form_toggle_and_choice_cycle() {
 #[test]
 fn reset_to_browse_returns_to_setup_when_required() {
     let mut app = App::from_bootstrap(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "Setup required".to_string(),
@@ -243,11 +191,12 @@ fn reset_to_browse_returns_to_setup_when_required() {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        idp_error: None,
     });
 
     app.reset_to_browse();
     assert!(matches!(app.canvas_mode, CanvasMode::Setup(_)));
-    assert_eq!(app.focus, Focus::Resources);
+    assert_eq!(app.focus, Focus::Form);
 }
 
 #[test]
@@ -255,16 +204,22 @@ fn reset_to_browse_returns_to_browser_when_ready() {
     let mut app = test_app();
     app.reset_to_browse();
     assert!(matches!(app.canvas_mode, CanvasMode::Browse));
-    assert_eq!(app.focus, Focus::Resources);
+    assert_eq!(app.focus, Focus::Records);
 }
 
 #[test]
 fn sync_runtime_updates_counts_without_fallback_records() {
     let mut app = test_app();
-    app.selected_record = 1;
-    app.selected_action = 2;
 
     app.sync_runtime(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "ops".to_string(),
         auth_label: "Service account".to_string(),
@@ -273,30 +228,14 @@ fn sync_runtime_updates_counts_without_fallback_records() {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        idp_error: None,
     });
 
     assert_eq!(app.project, "ops");
     assert_eq!(app.auth_label, "Service account");
-    assert_eq!(app.resources[0].count, "0");
-    assert_eq!(app.resources[1].count, "0");
-    assert_eq!(app.resources[2].count, "0");
-    assert_eq!(app.resources[3].count, "setup");
     assert!(app.app_records.is_empty());
     assert!(app.user_records.is_empty());
     assert!(app.idp_records.is_empty());
-    assert_eq!(app.selected_record, 0);
-    assert_eq!(app.selected_action, 0);
-}
-
-#[test]
-fn record_navigation_wraps_even_when_empty() {
-    let mut app = test_app();
-    app.next_record();
-    assert_eq!(app.focus, Focus::Records);
-    assert_eq!(app.selected_record, 0);
-    app.previous_record();
-    assert_eq!(app.focus, Focus::Records);
-    assert_eq!(app.selected_record, 0);
 }
 
 #[test]
@@ -412,58 +351,6 @@ fn render_form_line_choice_shows_value() {
     };
     let line = render_form_line(&field, false);
     assert!(line.contains("PAT"));
-}
-
-#[test]
-fn pending_label_covers_all_variants() {
-    assert_eq!(
-        pending_label(&PendingAction::CreateApplication),
-        "create application"
-    );
-    assert_eq!(
-        pending_label(&PendingAction::QuickSetupApplications),
-        "quick setup apps"
-    );
-    assert_eq!(
-        pending_label(&PendingAction::DeleteApplication {
-            app_id: "a".to_string(),
-            name: "b".to_string()
-        }),
-        "delete application"
-    );
-    assert_eq!(
-        pending_label(&PendingAction::RegenerateSecret {
-            app_id: "a".to_string(),
-            name: "b".to_string(),
-            client_id: "c".to_string()
-        }),
-        "regenerate secret"
-    );
-    assert_eq!(pending_label(&PendingAction::CreateUser), "create user");
-    assert_eq!(
-        pending_label(&PendingAction::CreateAdminUser),
-        "create admin user"
-    );
-    assert_eq!(
-        pending_label(&PendingAction::GrantIamOwner {
-            user_id: "u".to_string(),
-            username: "n".to_string()
-        }),
-        "grant IAM_OWNER"
-    );
-    assert_eq!(
-        pending_label(&PendingAction::QuickSetupUsers),
-        "quick setup users"
-    );
-    assert_eq!(
-        pending_label(&PendingAction::ConfigureGoogleIdp),
-        "configure Google IDP"
-    );
-    assert_eq!(
-        pending_label(&PendingAction::ValidateAuthSetup),
-        "validate auth setup"
-    );
-    assert_eq!(pending_label(&PendingAction::SaveConfig), "save config");
 }
 
 #[test]
@@ -674,71 +561,6 @@ fn form_previous_field_wraps() {
 }
 
 #[test]
-fn selected_record_returns_record_when_present() {
-    let mut app = App::from_bootstrap(TuiBootstrap {
-        host: "https://zitadel.example.com".to_string(),
-        project: "core".to_string(),
-        auth_label: "PAT".to_string(),
-        templates_path: None,
-        setup_required: false,
-        app_records: vec![Record {
-            id: "app-1".to_string(),
-            name: "grafana".to_string(),
-            kind: "public".to_string(),
-            summary: "1 redirect".to_string(),
-            detail: "cid-1".to_string(),
-            changed_at: "ACTIVE".to_string(),
-        }],
-        user_records: vec![],
-        idp_records: vec![],
-    });
-    app.selected_record = 0;
-    let record = app.selected_record();
-    assert!(record.is_some());
-    assert_eq!(record.unwrap().name, "grafana");
-}
-
-#[test]
-fn resource_label_covers_all_kinds() {
-    assert_eq!(resource_label(ResourceKind::Applications), "Applications");
-    assert_eq!(resource_label(ResourceKind::Users), "Users");
-    assert_eq!(resource_label(ResourceKind::Idps), "IDPs");
-    assert_eq!(resource_label(ResourceKind::Auth), "Auth");
-    assert_eq!(resource_label(ResourceKind::Config), "Config");
-}
-
-#[test]
-fn focus_label_covers_all_foci() {
-    assert_eq!(focus_label(Focus::Resources), "resources");
-    assert_eq!(focus_label(Focus::Actions), "actions");
-    assert_eq!(focus_label(Focus::Form), "form");
-    assert_eq!(focus_label(Focus::Records), "records");
-}
-
-#[test]
-fn status_mark_setup_required() {
-    let mut app = test_app();
-    app.setup_required = true;
-    assert_eq!(status_mark(&app), "!");
-}
-
-#[test]
-fn status_mark_ready() {
-    let app = test_app();
-    assert_eq!(status_mark(&app), "✓");
-}
-
-#[test]
-fn selection_title_per_resource() {
-    let mut app = test_app();
-    assert_eq!(selection_title(&app), "existing applications");
-    app.next_resource();
-    assert_eq!(selection_title(&app), "existing users");
-    app.next_resource();
-    assert_eq!(selection_title(&app), "configured identity providers");
-}
-
-#[test]
 fn set_canvas_mode_sets_focus_to_form_for_edit() {
     let mut app = test_app();
     let form = FormState {
@@ -821,43 +643,6 @@ fn message_lines_form_mode_renders_fields() {
 }
 
 #[test]
-fn record_navigation_wraps_with_records() {
-    let mut app = App::from_bootstrap(TuiBootstrap {
-        host: "https://zitadel.example.com".to_string(),
-        project: "core".to_string(),
-        auth_label: "PAT".to_string(),
-        templates_path: None,
-        setup_required: false,
-        app_records: vec![
-            Record {
-                id: "a1".to_string(),
-                name: "app1".to_string(),
-                kind: "public".to_string(),
-                summary: String::new(),
-                detail: String::new(),
-                changed_at: String::new(),
-            },
-            Record {
-                id: "a2".to_string(),
-                name: "app2".to_string(),
-                kind: "public".to_string(),
-                summary: String::new(),
-                detail: String::new(),
-                changed_at: String::new(),
-            },
-        ],
-        user_records: vec![],
-        idp_records: vec![],
-    });
-    app.next_record();
-    assert_eq!(app.selected_record, 1);
-    app.next_record();
-    assert_eq!(app.selected_record, 0);
-    app.previous_record();
-    assert_eq!(app.selected_record, 1);
-}
-
-#[test]
 fn form_insert_char_space_toggles_toggle_field() {
     let mut app = test_app();
     let form = FormState {
@@ -907,24 +692,6 @@ fn form_insert_char_space_cycles_choice() {
         panic!("expected EditForm");
     };
     assert_eq!(form.fields[0].value, "SA");
-}
-
-#[test]
-fn action_navigation_wraps() {
-    let mut app = test_app();
-    let action_count = app.actions().len();
-    for _ in 0..action_count {
-        app.next_action();
-    }
-    assert_eq!(app.selected_action, 0);
-}
-
-#[test]
-fn previous_action_wraps_to_last() {
-    let mut app = test_app();
-    app.previous_action();
-    let last = app.actions().len() - 1;
-    assert_eq!(app.selected_action, last);
 }
 
 #[test]
@@ -1282,4 +1049,240 @@ fn tab_in_form_mode_cycles_fields() {
         panic!("expected EditForm");
     };
     assert_eq!(form.selected_field, 1);
+}
+
+#[test]
+fn filtered_directory_renders_callback_and_opens_its_owner_at_both_sizes() {
+    use crossterm::event::KeyCode::*;
+    use ratatui::{backend::TestBackend, Terminal};
+    let mut app = test_app();
+    app.app_records = vec![
+        Record {
+            name: "Other".into(),
+            ..Default::default()
+        },
+        Record {
+            id: "g".into(),
+            name: "Grafana".into(),
+            kind: "confidential".into(),
+            redirect_uris: vec!["https://grafana.example/cb".into()],
+            ..Default::default()
+        },
+    ];
+    for key in [Char('/'), Char('G'), Char('r'), Enter, Enter, Down] {
+        app.handle_key(key);
+    }
+    for (width, height) in [(100, 28), (40, 18)] {
+        let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+        term.draw(|f| super::draw(f, &app, &mut vec![])).unwrap();
+        let screen = term
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(screen.contains("https://grafana.example/cb"));
+        assert!(screen.contains("Edit redirect URIs"));
+        assert!(!screen.contains("Other"));
+    }
+    assert!(
+        matches!(app.handle_key(Enter),AppCommand::BeginAction{action_index:4,selected_record:Some(r),..} if r.id=="g")
+    );
+    app.handle_key(Esc);
+    assert_eq!(app.expanded, None);
+}
+
+#[test]
+fn settings_opens_connection_and_configuration() {
+    use crossterm::event::KeyCode::*;
+    let mut app = test_app();
+    for key in [Up, Enter] {
+        app.handle_key(key);
+    }
+    assert!(matches!(
+        app.handle_key(Enter),
+        AppCommand::BeginAction {
+            resource: ResourceKind::Auth,
+            ..
+        }
+    ));
+    app.handle_key(Down);
+    assert!(matches!(
+        app.handle_key(Enter),
+        AppCommand::BeginAction {
+            resource: ResourceKind::Config,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn horizontal_keys_move_between_tabs_and_enter_the_selected_directory() {
+    use crossterm::event::KeyCode::*;
+    let mut app = test_app();
+    for (key, index) in [(Left, 3), (Right, 0), (Char('l'), 1), (Char('h'), 0)] {
+        app.handle_key(key);
+        assert_eq!(app.selected_resource, index);
+        assert_eq!(app.focus, Focus::Resources);
+    }
+    app.handle_key(Right);
+    app.handle_key(Enter);
+    assert_eq!(app.focus, Focus::Records);
+    assert!(matches!(
+        app.handle_key(Enter),
+        AppCommand::BeginAction {
+            resource: ResourceKind::Users,
+            action_index: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn draft_survives_failed_submission_and_navigation_until_discarded() {
+    use super::{Destination, Overlay, Scope};
+    use crossterm::event::KeyCode::*;
+    let mut app = test_app();
+    app.projects = vec![("two".into(), "Second project".into())];
+    app.set_canvas_mode(CanvasMode::EditForm(FormState {
+        title: "Rename".into(),
+        description: String::new(),
+        submit_label: "Save".into(),
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".into(),
+            kind: FieldKind::Text,
+            value: "A".into(),
+            cursor: 1,
+            help: String::new(),
+        }],
+    }));
+    app.handle_key(Char('é'));
+    assert!(canvas_title(&app).contains("Unsaved changes"));
+    let draft = app.canvas_mode.clone();
+    app.finish_submission(CanvasMode::Error(MessageState {
+        title: "Save failed".into(),
+        lines: vec!["Permission denied".into()],
+    }));
+    app.handle_key(Enter);
+    assert_eq!(app.canvas_mode, draft);
+    app.handle_key(F(2));
+    assert!(matches!(
+        app.overlay,
+        Some(Overlay::Discard(Destination::Section(1)))
+    ));
+    app.handle_key(Enter);
+    assert_eq!(app.selected_resource, 0);
+    assert_eq!(app.canvas_mode, draft);
+    app.handle_key(F(7));
+    app.handle_key(Char('S'));
+    app.handle_key(Enter);
+    assert!(matches!(
+        app.overlay,
+        Some(Overlay::Discard(Destination::Switch(Scope::Project, _)))
+    ));
+    app.handle_key(Esc);
+    assert_eq!(app.canvas_mode, draft);
+    app.handle_key(Backspace);
+    assert!(!app.dirty());
+    app.handle_key(Char('b'));
+    app.handle_key(F(2));
+    app.handle_key(Char('D'));
+    assert_eq!(app.selected_resource, 1);
+    assert_eq!(app.canvas_mode, CanvasMode::Browse);
+}
+
+#[test]
+fn wide_directory_joins_borders_and_exposes_provider_click_targets() {
+    use ratatui::{backend::TestBackend, Terminal};
+    let mut app = test_app();
+    app.selected_resource = 2;
+    app.idp_error = Some("Could not load identity providers: forbidden".into());
+    let mut hits = vec![];
+    let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+    terminal.draw(|f| super::draw(f, &app, &mut hits)).unwrap();
+    let buf = terminal.backend().buffer();
+    assert!(hits
+        .iter()
+        .any(|(_, t)| matches!(t, super::Target::Section(2))));
+    assert!(hits
+        .iter()
+        .any(|(_, t)| matches!(t, super::Target::Scope(super::Scope::Organisation))));
+    for x in 1..99 {
+        assert_eq!(buf[(x, 4)].symbol(), "─");
+        assert_eq!(buf[(x, 21)].symbol(), "─");
+    }
+    assert_eq!(buf[(32, 6)].symbol(), "│");
+    let screen = buf.content.iter().map(|c| c.symbol()).collect::<String>();
+    let directory = buf
+        .content
+        .chunks(usize::from(buf.area.width))
+        .map(|row| {
+            row.iter()
+                .take(32)
+                .skip(2)
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let words = directory.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        words.contains("Could not load identity providers: forbidden"),
+        "{words}"
+    );
+    assert!(!screen.contains("No records"));
+}
+
+#[test]
+fn confirmation_retains_the_originating_draft() {
+    use super::{ConfirmState, MessageState, PendingAction};
+    use crossterm::event::KeyCode;
+    let mut app = test_app();
+    let mut form = super::default_setup_form(&TuiBootstrap {
+        host: "https://example.test".into(),
+        project: "".into(),
+        auth_label: "".into(),
+        templates_path: None,
+        setup_required: false,
+        app_records: vec![],
+        user_records: vec![],
+        idp_records: vec![],
+        idp_error: None,
+        organization: None,
+        organizations: vec![],
+        projects: vec![],
+        org_error: None,
+        project_error: None,
+        app_error: None,
+        user_error: None,
+    });
+    form.pending = PendingAction::SaveConfig;
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.handle_key(KeyCode::Char('x'));
+    let expected = app.canvas_mode.clone();
+    let review = CanvasMode::Confirm(ConfirmState {
+        title: "Review".into(),
+        lines: vec![],
+        submit_label: "Apply".into(),
+        pending: PendingAction::SaveConfig,
+    });
+    app.finish_submission(review.clone());
+    app.handle_key(KeyCode::F(2));
+    assert!(matches!(app.overlay, Some(super::Overlay::Discard(_))));
+    app.handle_key(KeyCode::Esc);
+    app.handle_key(KeyCode::Esc);
+    assert_eq!(app.canvas_mode, expected);
+    assert!(app.dirty());
+    app.finish_submission(review);
+    app.finish_confirmation(CanvasMode::Error(MessageState {
+        title: "Failed".into(),
+        lines: vec![],
+    }));
+    app.handle_key(KeyCode::Esc);
+    assert_eq!(app.canvas_mode, expected);
+    assert!(app.dirty());
 }

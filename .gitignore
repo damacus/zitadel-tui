@@ -30,6 +30,8 @@ target/
 *.swp
 *.swo
 *~
+.ruby-lsp/
+.claude/worktrees/
 
 # OS
 .DS_Store

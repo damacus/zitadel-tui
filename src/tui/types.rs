@@ -1,7 +1,6 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Focus {
     Resources,
-    Actions,
     Form,
     Records,
 }
@@ -16,16 +15,8 @@ pub enum ResourceKind {
 }
 
 #[derive(Clone, Debug)]
-pub struct Resource {
-    pub kind: ResourceKind,
-    pub name: &'static str,
-    pub count: String,
-}
-
-#[derive(Clone, Debug)]
 pub struct Action {
     pub label: &'static str,
-    pub hotkey: &'static str,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -35,11 +26,20 @@ pub struct Record {
     pub kind: String,
     pub summary: String,
     pub detail: String,
+    pub provider_owner: Option<&'static str>,
     pub changed_at: String,
+    pub redirect_uris: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
 pub struct TuiBootstrap {
+    pub organization: Option<String>,
+    pub organizations: Vec<(String, String)>,
+    pub projects: Vec<(String, String)>,
+    pub org_error: Option<String>,
+    pub project_error: Option<String>,
+    pub app_error: Option<String>,
+    pub user_error: Option<String>,
     pub host: String,
     pub project: String,
     pub auth_label: String,
@@ -48,6 +48,7 @@ pub struct TuiBootstrap {
     pub app_records: Vec<Record>,
     pub user_records: Vec<Record>,
     pub idp_records: Vec<Record>,
+    pub idp_error: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,6 +64,20 @@ pub enum CanvasMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PendingAction {
     CreateApplication,
+    EditRedirectUris {
+        original: Vec<String>,
+        app_id: String,
+        name: String,
+    },
+    ApplyRedirectUris {
+        app_id: String,
+        original: Vec<String>,
+        desired: Vec<String>,
+    },
+    RenameApplication {
+        app_id: String,
+    },
+    CreateNative,
     QuickSetupApplications,
     DeleteApplication {
         app_id: String,
@@ -79,8 +94,24 @@ pub enum PendingAction {
         user_id: String,
         username: String,
     },
+    UserRole {
+        user: Box<Record>,
+        project: String,
+        grant: Option<crate::api::user_access::Grant>,
+        add: bool,
+        role: Option<String>,
+    },
+    UserLifecycle {
+        user: Box<Record>,
+        unlock: bool,
+    },
     QuickSetupUsers,
     ConfigureGoogleIdp,
+    EditGoogleIdp {
+        id: String,
+        scope: String,
+        sequence: String,
+    },
     ValidateAuthSetup,
     SaveConfig,
 }
@@ -130,6 +161,8 @@ pub enum FieldKind {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AppCommand {
+    Refresh,
+    ChangeScope(super::Scope, String),
     Noop,
     Quit,
     BeginAction {
@@ -143,74 +176,102 @@ pub enum AppCommand {
 
 #[derive(Debug)]
 pub struct App {
+    pub overlay: Option<super::Overlay>,
+    pub initial_values: Vec<String>,
+    pub(super) review_draft: Option<FormState>,
+    pub cursor: usize,
+    pub expanded: Option<usize>,
+    pub filter: String,
+    pub filtering: bool,
+    pub scroll: usize,
     pub focus: Focus,
-    pub show_inspector: bool,
+    pub organization: Option<String>,
+    pub organizations: Vec<(String, String)>,
+    pub projects: Vec<(String, String)>,
+    pub org_error: Option<String>,
+    pub project_error: Option<String>,
+    pub app_error: Option<String>,
+    pub user_error: Option<String>,
     pub host: String,
     pub project: String,
     pub auth_label: String,
     pub templates_path: Option<String>,
     pub setup_required: bool,
-    pub resources: Vec<Resource>,
     pub selected_resource: usize,
-    pub selected_action: usize,
     pub app_records: Vec<Record>,
     pub user_records: Vec<Record>,
     pub idp_records: Vec<Record>,
-    pub selected_record: usize,
+    pub idp_error: Option<String>,
     pub canvas_mode: CanvasMode,
 }
 
-pub const APPLICATION_ACTIONS: [Action; 4] = [
+pub const APPLICATION_ACTIONS: [Action; 7] = [
     Action {
         label: "Create application",
-        hotkey: "[enter]",
     },
     Action {
         label: "Regenerate secret",
-        hotkey: "[enter]",
     },
     Action {
         label: "Delete selected",
-        hotkey: "[enter]",
     },
     Action {
         label: "Quick setup",
-        hotkey: "[enter]",
+    },
+    Action {
+        label: "Edit redirect URIs",
+    },
+    Action {
+        label: "Create native application",
+    },
+    Action {
+        label: "Rename application",
     },
 ];
 
-pub const USER_ACTIONS: [Action; 4] = [
+pub const USER_ACTIONS: [Action; 9] = [
     Action {
         label: "Create user",
-        hotkey: "[enter]",
     },
     Action {
         label: "Create admin",
-        hotkey: "[enter]",
     },
     Action {
         label: "Grant IAM_OWNER",
-        hotkey: "[enter]",
     },
     Action {
         label: "Quick setup",
-        hotkey: "[enter]",
+    },
+    Action {
+        label: "View project roles",
+    },
+    Action {
+        label: "Grant project role",
+    },
+    Action {
+        label: "Revoke project role",
+    },
+    Action {
+        label: "Unlock user",
+    },
+    Action {
+        label: "Deactivate user",
     },
 ];
 
-pub const IDP_ACTIONS: [Action; 1] = [Action {
-    label: "Configure Google",
-    hotkey: "[enter]",
-}];
+pub const IDP_ACTIONS: [Action; 2] = [
+    Action {
+        label: "Add Google provider",
+    },
+    Action {
+        label: "Edit Google provider",
+    },
+];
 
-pub const AUTH_ACTIONS: [Action; 1] = [Action {
-    label: "Run setup",
-    hotkey: "[enter]",
-}];
+pub const AUTH_ACTIONS: [Action; 1] = [Action { label: "Run setup" }];
 
 pub const CONFIG_ACTIONS: [Action; 1] = [Action {
     label: "Edit config",
-    hotkey: "[enter]",
 }];
 
 pub fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
@@ -243,12 +304,8 @@ pub fn default_setup_form(bootstrap: &TuiBootstrap) -> FormState {
                 key: "auth_method",
                 label: "Auth method".to_string(),
                 value: "PAT".to_string(),
-                kind: FieldKind::Choice(vec![
-                    "PAT".to_string(),
-                    "Service account".to_string(),
-                    "OAuth device (placeholder)".to_string(),
-                ]),
-                help: "Choose PAT or service account for this slice".to_string(),
+                kind: FieldKind::Choice(vec!["PAT".to_string(), "Service account".to_string()]),
+                help: "Use a personal access token or service-account key.".to_string(),
                 cursor: 3,
             },
             FormField {

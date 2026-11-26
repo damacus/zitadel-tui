@@ -81,6 +81,16 @@ impl AppConfig {
         Ok(path)
     }
 
+    pub(crate) fn save_for_session(&self, configured_path: Option<&Path>) -> Result<PathBuf> {
+        if let Some(path) = configured_path {
+            // A custom config can live in a shared directory. Only secure the file itself.
+            let contents = toml::to_string_pretty(&PersistedAppConfig::from(self))?;
+            write_secure_file(path, &contents)?;
+            return Ok(path.to_owned());
+        }
+        self.save_to_canonical_path()
+    }
+
     pub fn canonical_path() -> Result<PathBuf> {
         dirs::config_dir()
             .map(|dir| dir.join("zitadel-tui").join("config.toml"))

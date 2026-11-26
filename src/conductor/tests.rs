@@ -5,15 +5,14 @@ use super::{
         bool_value, checkbox_enabled, checkbox_field, choice_field, form_value, optional_value,
         secret_field, split_csv, text_field, toggle_field,
     },
-    records::{
-        app_creation_summary, map_app_record, map_idp_record, map_user_record, string_field,
-    },
+    records::app_creation_summary,
     support::error_mode,
     TuiConductor,
 };
 use crate::{
+    api::client::ZitadelClient,
+    api::models::{App, CreateAppResult, Idp, User},
     cli::Cli,
-    client::ZitadelClient,
     config::{AppConfig, AppTemplate, TemplatesFile, UserTemplate},
     tui::{CanvasMode, FormState, PendingAction, Record, ResourceKind},
 };
@@ -21,6 +20,21 @@ use std::{
     env, fs,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+fn record_for_app(value: serde_json::Value) -> Record {
+    let app: App = serde_json::from_value(value).expect("app fixture decodes");
+    Record::from(&app)
+}
+
+fn record_for_user(value: serde_json::Value) -> Record {
+    let user: User = serde_json::from_value(value).expect("user fixture decodes");
+    Record::from(&user)
+}
+
+fn record_for_idp(value: serde_json::Value) -> Record {
+    let idp: Idp = serde_json::from_value(value).expect("idp fixture decodes");
+    Record::from(&idp)
+}
 
 fn temp_cache_path() -> std::path::PathBuf {
     let unique = SystemTime::now()
@@ -47,8 +61,7 @@ fn begin_config_unknown_action_browses() {
             token: None,
             service_account_file: None,
             config: None,
-            json: false,
-            once: false,
+            full: false,
             command: None,
         },
         config: AppConfig::default(),
@@ -61,6 +74,14 @@ fn begin_config_unknown_action_browses() {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+        idp_error: None,
     };
 
     let mode = conductor.begin_action(ResourceKind::Config, 1, None);
@@ -75,8 +96,7 @@ fn test_conductor(host: &str) -> TuiConductor {
             token: None,
             service_account_file: None,
             config: None,
-            json: false,
-            once: false,
+            full: false,
             command: None,
         },
         config: AppConfig {
@@ -97,7 +117,130 @@ fn test_conductor(host: &str) -> TuiConductor {
         app_records: vec![],
         user_records: vec![],
         idp_records: vec![],
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+        idp_error: None,
     }
+}
+
+#[tokio::test]
+async fn user_access_requires_review_before_writing() {
+    let mut server = mockito::Server::new_async().await;
+    let mut conductor = test_conductor(&server.url());
+    conductor.client = Some(ZitadelClient::new(server.url(), "token".into()).unwrap());
+    let user = record_for_user(
+        serde_json::json!({"id":"u","userName":"alice","state":"USER_STATE_LOCKED"}),
+    );
+    let grants = server
+        .mock("POST", "/management/v1/users/grants/_search")
+        .with_body("{}")
+        .create_async()
+        .await;
+    let roles = server
+        .mock("POST", "/management/v1/projects/project-1/roles/_search")
+        .with_body(r#"{"result":[{"key":"reader"}]}"#)
+        .create_async()
+        .await;
+    let write = server
+        .mock("POST", "/management/v1/users/u/grants")
+        .expect(0)
+        .create_async()
+        .await;
+    let CanvasMode::EditForm(form) = conductor.begin_user_action(5, Some(&user)).await else {
+        panic!("expected role selection")
+    };
+    let CanvasMode::Confirm(review) = conductor.submit_form(&form).await else {
+        panic!("expected role review")
+    };
+    assert!(review.lines.iter().any(|line| line.contains("reader")));
+    assert!(review.lines.iter().any(|line| line.contains("project-1")));
+    assert!(matches!(
+        conductor.begin_user_action(7, Some(&user)).await,
+        CanvasMode::Confirm(_)
+    ));
+    assert!(matches!(
+        conductor.begin_user_action(8, Some(&user)).await,
+        CanvasMode::Confirm(_)
+    ));
+    grants.assert_async().await;
+    roles.assert_async().await;
+    write.assert_async().await;
+}
+
+#[tokio::test]
+async fn rename_application_prepopulates_validates_and_writes_only_the_name() {
+    let mut server = mockito::Server::new_async().await;
+    let mut conductor = test_conductor(&server.url());
+    conductor.client = Some(ZitadelClient::new(server.url(), "token".into()).unwrap());
+    let update = server
+        .mock(
+            "POST",
+            "/zitadel.application.v2.ApplicationService/UpdateApplication",
+        )
+        .match_header("connect-protocol-version", "1")
+        .match_body(Matcher::Json(
+            serde_json::json!({"projectId":"project-1","applicationId":"app","name":"New label"}),
+        ))
+        .create_async()
+        .await;
+    for configuration in ["oidcConfig", "apiConfig", "samlConfig"] {
+        let record =
+            record_for_app(serde_json::json!({"id":"app","name":"Old name",configuration:{}}));
+        let CanvasMode::EditForm(mut form) =
+            conductor.begin_action(ResourceKind::Applications, 6, Some(&record))
+        else {
+            panic!("expected rename form");
+        };
+        assert_eq!(form.fields[0].value, "Old name");
+        for invalid in ["   ".to_owned(), "a".repeat(201)] {
+            form.fields[0].value = invalid;
+            assert!(matches!(
+                conductor.submit_form(&form).await,
+                CanvasMode::Error(_)
+            ));
+        }
+        if configuration == "samlConfig" {
+            form.fields[0].value = "New label".into();
+            assert!(matches!(
+                conductor.submit_form(&form).await,
+                CanvasMode::Success(_)
+            ));
+        }
+    }
+    update.assert_async().await;
+}
+
+#[tokio::test]
+async fn native_application_form_submits_selected_redirect_uris() {
+    let mut server = mockito::Server::new_async().await;
+    let mut conductor = test_conductor(&server.url());
+    conductor.client = Some(ZitadelClient::new(server.url(), "token".into()).unwrap());
+    let create = server.mock("POST","/management/v1/projects/project-1/apps/oidc")
+        .match_body(Matcher::PartialJson(serde_json::json!({"name":"mobile","appType":"OIDC_APP_TYPE_NATIVE","redirectUris":["myapp://callback","myapp://other"]})))
+        .with_body(r#"{"appId":"a","clientId":"c"}"#).create_async().await;
+    let CanvasMode::EditForm(mut form) =
+        conductor.begin_action(ResourceKind::Applications, 5, None)
+    else {
+        panic!("expected native application form");
+    };
+    for field in &mut form.fields {
+        if field.key == "name" {
+            field.value = "mobile".into();
+        }
+        if field.key == "redirect_uris" {
+            field.value = "myapp://callback, myapp://other".into();
+        }
+    }
+    assert!(matches!(
+        conductor.submit_form(&form).await,
+        CanvasMode::Success(_)
+    ));
+    create.assert_async().await;
 }
 
 fn app_template(name: &str) -> AppTemplate {
@@ -121,6 +264,18 @@ async fn refresh_runtime_loads_all_record_types() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(r#"{"access_token":"test-token"}"#)
+        .create_async()
+        .await;
+    let identity = server
+        .mock("GET", "/auth/v1/users/me")
+        .with_status(200)
+        .with_body(r#"{"user":{"id":"me","details":{"resourceOwner":"home"}}}"#)
+        .create_async()
+        .await;
+    let _organizations = server
+        .mock("POST", "/v2/organizations/_search")
+        .with_status(200)
+        .with_body(r#"{"result":[{"id":"other","name":"A"},{"id":"home","name":"B"}]}"#)
         .create_async()
         .await;
     let _projects = server
@@ -148,7 +303,7 @@ async fn refresh_runtime_loads_all_record_types() {
         .create_async()
         .await;
     let _idps = server
-        .mock("POST", "/admin/v1/idps/_search")
+        .mock("POST", "/management/v1/idps/templates/_search")
         .match_header("authorization", "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -161,6 +316,8 @@ async fn refresh_runtime_loads_all_record_types() {
     let mut conductor = test_conductor(&server.url());
     conductor.refresh_runtime().await;
 
+    identity.assert_async().await;
+    assert_eq!(conductor.organization.as_deref(), Some("home"));
     assert_eq!(conductor.app_records.len(), 1);
     assert_eq!(conductor.user_records.len(), 1);
     assert_eq!(conductor.idp_records.len(), 1);
@@ -206,8 +363,7 @@ async fn bootstrap_marks_cached_oidc_session_as_api_limited() {
             token: None,
             service_account_file: None,
             config: None,
-            json: false,
-            once: false,
+            full: false,
             command: None,
         },
         AppConfig {
@@ -295,7 +451,7 @@ async fn quick_setup_apps_batches_creates_and_refreshes() {
         .create_async()
         .await;
     let _idps = server
-        .mock("POST", "/admin/v1/idps/_search")
+        .mock("POST", "/management/v1/idps/templates/_search")
         .match_header("authorization", "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -418,7 +574,7 @@ async fn quick_setup_users_batches_creates_and_grants_admins() {
         .create_async()
         .await;
     let _idps = server
-        .mock("POST", "/admin/v1/idps/_search")
+        .mock("POST", "/management/v1/idps/templates/_search")
         .match_header("authorization", "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -474,7 +630,7 @@ fn map_app_record_extracts_oidc_fields() {
             "redirectUris": ["https://grafana.example.com/callback", "https://grafana.example.com/silent"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.id, "app-1");
     assert_eq!(record.name, "grafana");
     assert_eq!(record.kind, "public");
@@ -495,7 +651,7 @@ fn map_app_record_confidential_auth_method() {
             "redirectUris": []
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "confidential");
     assert_eq!(record.summary, "0 redirects");
 }
@@ -511,7 +667,7 @@ fn map_app_record_extracts_api_fields() {
             "clientId": "api-client-1"
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.id, "app-3");
     assert_eq!(record.name, "Management API");
     assert_eq!(record.kind, "api");
@@ -533,10 +689,10 @@ fn map_app_record_uses_app_type_when_auth_method_missing() {
             "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "confidential");
     assert_eq!(record.detail, "cid-4");
-    assert_eq!(record.summary, "1 redirects");
+    assert_eq!(record.summary, "1 redirect");
 }
 
 #[test]
@@ -551,10 +707,10 @@ fn map_app_record_keeps_oidc_kind_when_auth_method_and_app_type_missing() {
             "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "oidc");
     assert_eq!(record.detail, "cid-5");
-    assert_eq!(record.summary, "1 redirects");
+    assert_eq!(record.summary, "1 redirect");
 }
 
 #[test]
@@ -569,7 +725,7 @@ fn map_app_record_classifies_native_app_type() {
             "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "native");
 }
 
@@ -586,14 +742,14 @@ fn map_app_record_classifies_device_code_grant() {
             "grantTypes": ["OIDC_GRANT_TYPE_DEVICE_CODE"]
         }
     });
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "device-code");
 }
 
 #[test]
 fn map_app_record_missing_oidc_config() {
     let app = serde_json::json!({"id": "app-4", "name": "plain"});
-    let record = map_app_record(app);
+    let record = record_for_app(app);
     assert_eq!(record.kind, "unknown");
     assert_eq!(record.detail, "missing-client-id");
     assert_eq!(record.summary, "0 redirects");
@@ -611,7 +767,7 @@ fn map_user_record_extracts_human_fields() {
             "profile": {"displayName": "Admin User"}
         }
     });
-    let record = map_user_record(user);
+    let record = record_for_user(user);
     assert_eq!(record.id, "user-1");
     assert_eq!(record.name, "admin");
     assert_eq!(record.kind, "human ACTIVE");
@@ -632,7 +788,7 @@ fn map_user_record_extracts_machine_fields() {
             "name": "cluster service account"
         }
     });
-    let record = map_user_record(user);
+    let record = record_for_user(user);
     assert_eq!(record.id, "user-2");
     assert_eq!(record.name, "cluster service account");
     assert_eq!(record.kind, "machine ACTIVE");
@@ -649,7 +805,7 @@ fn map_user_record_machine_falls_back_to_login_name() {
         "loginNames": ["worker@example.com"],
         "machine": {}
     });
-    let record = map_user_record(user);
+    let record = record_for_user(user);
     assert_eq!(record.name, "worker");
     assert_eq!(record.kind, "machine unknown");
     assert_eq!(record.summary, "worker@example.com");
@@ -659,7 +815,7 @@ fn map_user_record_machine_falls_back_to_login_name() {
 #[test]
 fn map_user_record_missing_human_fields() {
     let user = serde_json::json!({"id": "user-4", "userName": "bot"});
-    let record = map_user_record(user);
+    let record = record_for_user(user);
     assert_eq!(record.kind, "human unknown");
     assert_eq!(record.summary, "no email");
     assert_eq!(record.detail, "human user");
@@ -673,19 +829,19 @@ fn map_idp_record_extracts_fields() {
         "state": "ACTIVE",
         "type": "google"
     });
-    let record = map_idp_record(idp);
+    let record = record_for_idp(idp);
     assert_eq!(record.id, "idp-1");
     assert_eq!(record.name, "Google");
     assert_eq!(record.kind, "ACTIVE");
     assert_eq!(record.summary, "google");
-    assert_eq!(record.detail, "manual credentials");
-    assert_eq!(record.changed_at, "configured");
+    assert_eq!(record.detail, "Unknown scope");
+    assert_eq!(record.changed_at, "unknown");
 }
 
 #[test]
 fn map_idp_record_missing_fields() {
     let idp = serde_json::json!({});
-    let record = map_idp_record(idp);
+    let record = record_for_idp(idp);
     assert_eq!(record.id, "missing-id");
     assert_eq!(record.name, "unnamed-idp");
     assert_eq!(record.kind, "unknown");
@@ -772,7 +928,8 @@ fn split_csv_single_value() {
 
 #[test]
 fn app_creation_summary_with_client_id() {
-    let value = serde_json::json!({"clientId": "cid-123"});
+    let value: CreateAppResult =
+        serde_json::from_value(serde_json::json!({"clientId": "cid-123"})).unwrap();
     assert_eq!(
         app_creation_summary("grafana", &value),
         "grafana -> cid-123"
@@ -781,7 +938,7 @@ fn app_creation_summary_with_client_id() {
 
 #[test]
 fn app_creation_summary_missing_client_id() {
-    let value = serde_json::json!({});
+    let value: CreateAppResult = serde_json::from_value(serde_json::json!({})).unwrap();
     assert_eq!(
         app_creation_summary("grafana", &value),
         "grafana -> created"
@@ -797,13 +954,6 @@ fn checkbox_enabled_truthy_values() {
     assert!(!checkbox_enabled("false"));
     assert!(!checkbox_enabled(""));
     assert!(!checkbox_enabled("maybe"));
-}
-
-#[test]
-fn string_field_extracts_value_or_fallback() {
-    let value = serde_json::json!({"name": "test"});
-    assert_eq!(string_field(&value, "name", "default"), "test");
-    assert_eq!(string_field(&value, "missing", "default"), "default");
 }
 
 #[test]
@@ -874,6 +1024,8 @@ fn begin_action_apps_delete_with_record_returns_confirm() {
         kind: "public".to_string(),
         summary: String::new(),
         detail: String::new(),
+        redirect_uris: vec![],
+        provider_owner: None,
         changed_at: String::new(),
     };
     let mode = conductor.begin_action(ResourceKind::Applications, 2, Some(&record));
@@ -913,4 +1065,196 @@ fn begin_action_config_edit_returns_form() {
     let conductor = test_conductor("https://example.com");
     let mode = conductor.begin_action(ResourceKind::Config, 0, None);
     assert!(matches!(mode, CanvasMode::EditForm(_)));
+}
+
+#[tokio::test]
+async fn scoped_directory_can_refresh_a_selected_project_while_listing_projects_fails() {
+    let mut server = mockito::Server::new_async().await;
+    let mut conductor = test_conductor(&server.url());
+    let client = ZitadelClient::new(server.url(), "token".into()).unwrap();
+    let identity = server.mock("GET","/auth/v1/users/me")
+        .with_body(r#"{"user":{"id":"me","userName":"admin","preferredLoginName":"admin@team","details":{"resourceOwner":"org-b"}}}"#)
+        .create_async().await;
+    let projects = server
+        .mock("POST", "/management/v1/projects/_search")
+        .match_header("x-zitadel-orgid", "org-b")
+        .with_status(503)
+        .create_async()
+        .await;
+    let apps = server
+        .mock("POST", "/management/v1/projects/project-1/apps/_search")
+        .match_header("x-zitadel-orgid", "org-b")
+        .with_body("{}")
+        .create_async()
+        .await;
+    conductor.load_directory(client).await;
+    assert_eq!(conductor.organization.as_deref(), Some("org-b"));
+    assert_eq!(conductor.project, "project-1");
+    assert!(conductor.project_error.as_deref().unwrap().contains("503"));
+    assert!(conductor.app_error.is_none());
+    for mock in [identity, projects, apps] {
+        mock.assert_async().await;
+    }
+}
+
+#[tokio::test]
+async fn scoped_directory_keeps_apps_when_user_list_is_forbidden() {
+    let mut server = mockito::Server::new_async().await;
+    let mut conductor = test_conductor(&server.url());
+    conductor.organization = Some("org-b".into());
+    conductor.project.clear();
+    let client = ZitadelClient::new(server.url(), "token".into()).unwrap();
+    let orgs = server
+        .mock("POST", "/v2/organizations/_search")
+        .with_status(200)
+        .with_body(r#"{"result":[{"id":"org-b","name":"Team B"}]}"#)
+        .create_async()
+        .await;
+    let projects = server
+        .mock("POST", "/management/v1/projects/_search")
+        .match_header("x-zitadel-orgid", "org-b")
+        .with_status(200)
+        .with_body(r#"{"result":[{"id":"project-b","name":"Project B"}]}"#)
+        .create_async()
+        .await;
+    let apps = server
+        .mock("POST", "/management/v1/projects/project-b/apps/_search")
+        .match_header("x-zitadel-orgid", "org-b")
+        .with_status(200)
+        .with_body(r#"{"result":[{"id":"app-b","name":"App B"}]}"#)
+        .create_async()
+        .await;
+    let users = server
+        .mock("POST", "/management/v1/users/_search")
+        .match_header("x-zitadel-orgid", "org-b")
+        .with_status(403)
+        .create_async()
+        .await;
+    let providers = server
+        .mock("POST", "/management/v1/idps/templates/_search")
+        .match_header("x-zitadel-orgid", "org-b")
+        .with_status(200)
+        .with_body("{}")
+        .create_async()
+        .await;
+    conductor.load_directory(client).await;
+    for mock in [orgs, projects, apps, users, providers] {
+        mock.assert_async().await;
+    }
+    assert_eq!(conductor.project, "project-b");
+    assert_eq!(conductor.app_records[0].id, "app-b");
+    assert!(conductor.app_error.is_none());
+    assert!(conductor.user_error.as_deref().unwrap().contains("403"));
+    assert!(conductor.select_project("project-1").await.is_err());
+}
+
+#[tokio::test]
+async fn setup_rejects_an_invalid_pat_before_persisting_the_custom_config() {
+    let mut server = mockito::Server::new_async().await;
+    let rejection = server
+        .mock("GET", "/auth/v1/users/me")
+        .match_header("authorization", "Bearer rejected")
+        .with_status(401)
+        .create_async()
+        .await;
+    let mut conductor = test_conductor(&server.url());
+    let config_path = temp_cache_path();
+    conductor.cli.config = Some(config_path.clone());
+    let CanvasMode::Setup(mut form) = conductor.begin_action(ResourceKind::Auth, 0, None) else {
+        panic!("expected setup")
+    };
+    form.fields
+        .iter_mut()
+        .find(|f| f.key == "token")
+        .unwrap()
+        .value = "rejected".into();
+    assert!(matches!(
+        conductor.submit_form(&form).await,
+        CanvasMode::Error(_)
+    ));
+    assert!(!config_path.exists());
+    rejection.assert_async().await;
+}
+
+#[tokio::test]
+async fn redirect_review_preserves_literal_commas_and_rejects_an_empty_list() {
+    let conductor = test_conductor("https://example.test");
+    let existing = "https://example.test/cb?audience=a,b";
+    let record = Record {
+        id: "a".into(),
+        name: "Example".into(),
+        redirect_uris: vec![existing.into()],
+        ..Record::default()
+    };
+    let CanvasMode::EditForm(mut form) =
+        conductor.begin_action(ResourceKind::Applications, 4, Some(&record))
+    else {
+        panic!("expected editor")
+    };
+    assert_eq!(form.fields[0].value, existing);
+    form.fields[0].value.push_str(" https://example.test/other");
+    let mut conductor = conductor;
+    let CanvasMode::Confirm(review) = conductor.submit_form(&form).await else {
+        panic!("expected review")
+    };
+    assert_eq!(review.lines, ["Add     https://example.test/other"]);
+    form.fields[0].value.clear();
+    assert!(matches!(
+        conductor.submit_form(&form).await,
+        CanvasMode::Error(_)
+    ));
+}
+
+#[test]
+fn startup_setup_uses_the_saved_default_project_even_with_an_override() {
+    let mut conductor = test_conductor("https://example.test");
+    conductor.setup_required = true;
+    conductor.project.clear();
+    conductor.config.project_id = Some("saved".into());
+    conductor.cli.project_id = Some("override".into());
+    let bootstrap = conductor.bootstrap_state();
+    assert_eq!(
+        form_value(&crate::tui::default_setup_form(&bootstrap), "project"),
+        "saved"
+    );
+}
+
+#[tokio::test]
+async fn saving_templates_keeps_the_active_project() {
+    let mut server = mockito::Server::new_async().await;
+    let _projects = server
+        .mock("POST", "/management/v1/projects/_search")
+        .with_body(
+            r#"{"result":[{"id":"active","name":"Active"},{"id":"default","name":"Default"}]}"#,
+        )
+        .create_async()
+        .await;
+    let _grants = server
+        .mock("POST", "/management/v1/granted_projects/_search")
+        .with_body("{}")
+        .create_async()
+        .await;
+    let mut conductor = test_conductor(&server.url());
+    conductor.organization = Some("org".into());
+    conductor.project = "active".into();
+    conductor.config.project_id = Some("default".into());
+    conductor.cli.project_id = None;
+    let path = temp_cache_path();
+    conductor.cli.config = Some(path.clone());
+    let CanvasMode::EditForm(mut form) = conductor.begin_action(ResourceKind::Config, 0, None)
+    else {
+        panic!("expected settings form")
+    };
+    form.fields
+        .iter_mut()
+        .find(|field| field.key == "templates_path")
+        .unwrap()
+        .value = "/example/templates.yml".into();
+    assert!(matches!(
+        conductor.submit_form(&form).await,
+        CanvasMode::Success(_)
+    ));
+    assert_eq!(conductor.project, "active");
+    assert_eq!(conductor.config.project_id.as_deref(), Some("default"));
+    fs::remove_file(path).unwrap();
 }

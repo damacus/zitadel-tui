@@ -5,23 +5,14 @@ identity providers, and runtime configuration.
 
 ## Features
 
-- **Applications**
-  - List OIDC applications
-  - Create applications from manual flags or templates
-  - Regenerate confidential client secrets
-  - Delete applications
-  - Quick setup from YAML templates
-
-- **Users**
-  - List users
-  - Create human users
-  - Create imported local admin users
-  - Grant `IAM_OWNER`
-  - Quick setup from YAML templates
-
-- **Identity Providers**
-  - List configured IDPs
-  - Configure Google manually
+- **Applications** — Browse and rename apps in the selected project, create web and native OIDC apps,
+  review additions and removals to redirect URIs, rotate secrets and delete apps.
+- **Users** — Browse the selected organisation, create users, inspect project
+  roles, grant or revoke a role, unlock accounts and deactivate users.
+- **Identity providers** — Inspect provider ownership and effective sign-in status.
+  Create a Google provider or edit an existing one.
+- **Settings** — Edit the host, default project, administrative credentials and
+  templates path. Field help appears at the bottom of each form.
 
 - **Configuration and Auth**
   - Canonical TOML config in XDG config space
@@ -56,10 +47,14 @@ zitadel-tui apps list
 
 Important behavior:
 
-- subcommands run one-shot without `--once`
-- `--json` switches headless output to JSON envelopes
+- every subcommand prints exactly one JSON envelope on stdout:
+  `{"command":…,"ok":true,"result":…}` on success,
+  `{"command":…,"ok":false,"error":{"kind","message","details"?}}` on failure
+- exit codes are meaningful: `0` success, `1` command error, `2` argument
+  parse failure
 - `--project-id` is optional in headless mode because the CLI can resolve the
   default project when omitted
+- no command prompts; pass all inputs via flags, env vars, or config
 
 Global options:
 
@@ -68,16 +63,17 @@ Global options:
 - `--token`: use `ZITADEL_TOKEN`
 - `--service-account-file`: use `ZITADEL_SERVICE_ACCOUNT_FILE`
 - `--config`: load a non-default TOML file
-- `--json`: print machine-readable output
-- `--once`: deprecated compatibility flag for one-shot subcommand execution
+- `--full`: raw API payloads instead of summary projections on `list`/`get`
 
 Subcommands:
 
-- `apps`: `list`, `create`, `create-native`, `delete`, `regenerate-secret`, `quick-setup`
-- `users`: `list`, `create`, `create-admin`, `grant-iam-owner`, `quick-setup`
-- `idps`: `list`, `configure-google`
+- `apps`: `list`, `get`, `create`, `create-native`, `delete`, `regenerate-secret`, `quick-setup`
+- `users`: `list`, `get`, `create`, `create-admin`, `grant-iam-owner`, `quick-setup`
+- `idps`: `list`, `get`, `configure-google`
+- `projects`: `list`
 - `auth`: `login`, `logout`, `status`
 - `config`: `show`
+- `agent`: print the machine-readable agent guide (`docs/AGENT.md`)
 
 See the top-level [README](../README.md) for the complete option-by-option CLI
 reference.

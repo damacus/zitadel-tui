@@ -1,38 +1,76 @@
-use anyhow::{Context, Result};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::{
-    cli::{Cli, UsersAction, UsersCommand},
+    api::client::ZitadelClient,
+    cli::{Cli, UserSelectorArgs, UsersAction, UsersCommand},
     config::AppConfig,
+    error::{CommandError, ErrorKind},
 };
 
-use super::shared::authenticated_client;
+use super::shared::{authenticated_client, get_result, list_result};
 
 pub async fn execute_users_command(
     command: &UsersCommand,
     args: &Cli,
     config: &AppConfig,
-) -> Result<Value> {
+) -> Result<Value, CommandError> {
+    // Cheap input validation before credential resolution so
+    // `error.kind` is deterministic regardless of credentials or API
+    // reachability.
+    if let UsersAction::CreateAdmin(create) = &command.action {
+        if create.password.is_none() {
+            return Err(CommandError::usage(
+                "--password is required for users create-admin in headless mode",
+            ));
+        }
+    }
+    let templates = if matches!(command.action, UsersAction::QuickSetup) {
+        Some(
+            config
+                .templates()
+                .map_err(|error| CommandError::config(error.to_string()))?,
+        )
+    } else {
+        None
+    };
+
     let client = authenticated_client(args, config).await?;
     match &command.action {
-        UsersAction::List => Ok(serde_json::to_value(client.list_users(100).await?)?),
-        UsersAction::Create(create) => {
-            client
-                .create_human_user(
-                    &create.email,
-                    &create.first_name,
-                    &create.last_name,
-                    create.username.as_deref(),
-                )
+        UsersAction::List(list) => {
+            let users = crate::ops::users::list(&client, list.limit)
                 .await
+                .map_err(CommandError::from)?;
+            list_result(&users, args.full)
         }
+        UsersAction::Get(get) => {
+            let selector = get.selector();
+            let user = crate::ops::resolve_user(&client, &selector)
+                .await
+                .map_err(CommandError::from)?
+                .into_command_result(&selector.describe(), selector.lookup())?;
+            get_result(&user, args.full)
+        }
+        UsersAction::Create(create) => Ok(serde_json::to_value(
+            crate::ops::users::create_human(
+                &client,
+                &create.email,
+                &create.first_name,
+                &create.last_name,
+                create.username.as_deref(),
+            )
+            .await
+            .map_err(CommandError::from)?,
+        )?),
         UsersAction::CreateAdmin(create) => {
-            let password = create
-                .password
-                .clone()
-                .context("--password is required for users create-admin in headless mode")?;
-            client
-                .import_human_user(
+            // Validated above; re-check defensively to stay panic-free.
+            let password = create.password.clone().ok_or_else(|| {
+                CommandError::usage(
+                    "--password is required for users create-admin in headless mode",
+                )
+            })?;
+            Ok(serde_json::to_value(
+                crate::ops::users::import_admin(
+                    &client,
                     &create.username,
                     &create.first_name,
                     &create.last_name,
@@ -41,36 +79,45 @@ pub async fn execute_users_command(
                     true,
                 )
                 .await
+                .map_err(CommandError::from)?,
+            )?)
         }
-        UsersAction::GrantIamOwner(grant) => client.grant_iam_owner(&grant.user_id).await,
+        UsersAction::GrantIamOwner(grant) => {
+            let user_id = resolved_user_id(&client, grant).await?;
+            Ok(serde_json::to_value(
+                crate::ops::users::grant_iam_owner(&client, &user_id)
+                    .await
+                    .map_err(CommandError::from)?,
+            )?)
+        }
         UsersAction::QuickSetup => {
-            let templates = config.templates()?;
-            let mut join_set = tokio::task::JoinSet::new();
-
-            for (index, user) in templates.users.into_iter().enumerate() {
-                let client = client.clone();
-                join_set.spawn(async move {
-                    let result = client
-                        .create_human_user(&user.email, &user.first_name, &user.last_name, None)
-                        .await?;
-                    if user.admin {
-                        if let Some(user_id) = result.get("userId").and_then(|value| value.as_str())
-                        {
-                            client.grant_iam_owner(user_id).await?;
-                        }
-                    }
-                    Ok::<_, anyhow::Error>((index, result))
-                });
-            }
-
-            let mut results = Vec::new();
-            while let Some(res) = join_set.join_next().await {
-                results.push(res??);
-            }
-            results.sort_by_key(|(idx, _)| *idx);
-
-            let created: Vec<Value> = results.into_iter().map(|(_, val)| val).collect();
-            Ok(Value::Array(created))
+            let templates = templates.expect("templates loaded for users quick-setup");
+            let created = crate::ops::users::quick_setup(&client, templates.users)
+                .await
+                .map_err(CommandError::from)?;
+            let results: Vec<_> = created.into_iter().map(|outcome| outcome.result).collect();
+            Ok(serde_json::to_value(&results)?)
         }
     }
+}
+
+/// Resolves a selector group to a user id: zero matches → `not_found`,
+/// multiple → `ambiguous`, a match without an id → `api` (malformed API
+/// payload). Used by `grant-iam-owner` which mutates by id.
+async fn resolved_user_id(
+    client: &ZitadelClient,
+    selector_args: &UserSelectorArgs,
+) -> Result<String, CommandError> {
+    let selector = selector_args.selector();
+    let user = crate::ops::resolve_user(client, &selector)
+        .await
+        .map_err(CommandError::from)?
+        .into_command_result(&selector.describe(), selector.lookup())?;
+    user.id.clone().ok_or_else(|| {
+        CommandError::with_details(
+            ErrorKind::Api,
+            format!("{} resolved without an id", selector.describe()),
+            json!({ "lookup": selector.lookup() }),
+        )
+    })
 }

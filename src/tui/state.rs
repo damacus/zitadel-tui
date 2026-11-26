@@ -1,9 +1,8 @@
 use crossterm::event::KeyCode;
 
 use super::types::{
-    default_setup_form, App, AppCommand, CanvasMode, Focus, FormField, FormState, Resource,
-    ResourceKind, TuiBootstrap, APPLICATION_ACTIONS, AUTH_ACTIONS, CONFIG_ACTIONS, IDP_ACTIONS,
-    USER_ACTIONS,
+    default_setup_form, App, AppCommand, CanvasMode, Focus, FormField, FormState, ResourceKind,
+    TuiBootstrap, APPLICATION_ACTIONS, AUTH_ACTIONS, CONFIG_ACTIONS, IDP_ACTIONS, USER_ACTIONS,
 };
 
 impl App {
@@ -22,86 +21,80 @@ impl App {
         };
 
         Self {
-            focus: Focus::Resources,
-            show_inspector: false,
+            initial_values: Self::field_values(&canvas_mode),
+            review_draft: None,
+            overlay: None,
+            cursor: 0,
+            expanded: None,
+            filter: String::new(),
+            filtering: false,
+            scroll: 0,
+            focus: if setup_required {
+                Focus::Form
+            } else {
+                Focus::Resources
+            },
+            organization: bootstrap.organization,
+            organizations: bootstrap.organizations,
+            projects: bootstrap.projects,
+            org_error: bootstrap.org_error,
+            project_error: bootstrap.project_error,
+            app_error: bootstrap.app_error,
+            user_error: bootstrap.user_error,
             host: bootstrap.host,
             project: bootstrap.project,
             auth_label: bootstrap.auth_label,
             templates_path: templates_path.clone(),
             setup_required,
-            resources: vec![
-                Resource {
-                    kind: ResourceKind::Applications,
-                    name: "Applications",
-                    count: app_records.len().to_string(),
-                },
-                Resource {
-                    kind: ResourceKind::Users,
-                    name: "Users",
-                    count: user_records.len().to_string(),
-                },
-                Resource {
-                    kind: ResourceKind::Idps,
-                    name: "IDPs",
-                    count: idp_records.len().to_string(),
-                },
-                Resource {
-                    kind: ResourceKind::Auth,
-                    name: "Auth",
-                    count: if setup_required {
-                        "setup".to_string()
-                    } else {
-                        "ready".to_string()
-                    },
-                },
-                Resource {
-                    kind: ResourceKind::Config,
-                    name: "Config",
-                    count: if templates_path.is_some() {
-                        "templated".to_string()
-                    } else {
-                        "local".to_string()
-                    },
-                },
-            ],
             selected_resource: 0,
-            selected_action: 0,
             app_records,
             user_records,
             idp_records,
-            selected_record: 0,
+            idp_error: bootstrap.idp_error,
             canvas_mode,
         }
     }
 
     pub fn sync_runtime(&mut self, bootstrap: TuiBootstrap) {
+        self.organization = bootstrap.organization;
+        self.organizations = bootstrap.organizations;
+        self.projects = bootstrap.projects;
+        self.org_error = bootstrap.org_error;
+        self.project_error = bootstrap.project_error;
+        self.app_error = bootstrap.app_error;
+        self.user_error = bootstrap.user_error;
         self.host = bootstrap.host;
         self.project = bootstrap.project;
         self.auth_label = bootstrap.auth_label;
         self.templates_path = bootstrap.templates_path;
         self.setup_required = bootstrap.setup_required;
+        let target = self
+            .expanded
+            .and_then(|i| self.active_records().get(i))
+            .map(|r| r.id.clone());
+        let cursor_id = match self.entries().get(self.cursor) {
+            Some(super::directory::Entry::Record(i)) => Some(self.active_records()[*i].id.clone()),
+            _ => None,
+        };
+        let old_cursor = self.cursor;
         self.app_records = bootstrap.app_records;
         self.user_records = bootstrap.user_records;
         self.idp_records = bootstrap.idp_records;
-        self.selected_record = 0;
-        self.selected_action = 0;
-        self.resources[0].count = self.app_records.len().to_string();
-        self.resources[1].count = self.user_records.len().to_string();
-        self.resources[2].count = self.idp_records.len().to_string();
-        self.resources[3].count = if self.setup_required {
-            "setup".to_string()
-        } else {
-            "ready".to_string()
-        };
-        self.resources[4].count = if self.templates_path.is_some() {
-            "templated".to_string()
-        } else {
-            "local".to_string()
-        };
+        self.idp_error = bootstrap.idp_error;
+        self.expanded = target
+            .as_ref()
+            .and_then(|id| self.active_records().iter().position(|r| &r.id == id));
+        let entries = self.entries();
+        self.cursor=cursor_id.and_then(|id|entries.iter().position(|entry| matches!(entry,super::directory::Entry::Record(i) if self.active_records()[*i].id==id))).unwrap_or_else(||old_cursor.min(entries.len().saturating_sub(1)));
     }
 
     pub fn active_resource(&self) -> ResourceKind {
-        self.resources[self.selected_resource].kind
+        [
+            ResourceKind::Applications,
+            ResourceKind::Users,
+            ResourceKind::Idps,
+            ResourceKind::Auth,
+        ][self.selected_resource]
     }
 
     pub fn actions(&self) -> &'static [super::types::Action] {
@@ -123,98 +116,33 @@ impl App {
         }
     }
 
-    pub fn selected_record(&self) -> Option<&super::types::Record> {
-        self.active_records().get(self.selected_record)
-    }
-
-    pub fn next_record(&mut self) {
-        let len = self.active_records().len();
-        if len == 0 {
-            self.focus = Focus::Records;
-            return;
-        }
-
-        self.selected_record = (self.selected_record + 1) % len;
-        self.focus = Focus::Records;
-    }
-
-    pub fn previous_record(&mut self) {
-        let len = self.active_records().len();
-        if len == 0 {
-            self.focus = Focus::Records;
-            return;
-        }
-
-        self.selected_record = if self.selected_record == 0 {
-            len - 1
-        } else {
-            self.selected_record - 1
-        };
-        self.focus = Focus::Records;
-    }
-
-    pub fn next_resource(&mut self) {
-        self.selected_resource = (self.selected_resource + 1) % self.resources.len();
-        self.selected_action = 0;
-        self.selected_record = 0;
-        self.focus = Focus::Resources;
-    }
-
-    pub fn previous_resource(&mut self) {
-        self.selected_resource = if self.selected_resource == 0 {
-            self.resources.len() - 1
-        } else {
-            self.selected_resource - 1
-        };
-        self.selected_action = 0;
-        self.selected_record = 0;
-        self.focus = Focus::Resources;
-    }
-
-    pub fn next_action(&mut self) {
-        let len = self.actions().len();
-        if len == 0 {
-            self.focus = Focus::Actions;
-            return;
-        }
-
-        self.selected_action = (self.selected_action + 1) % len;
-        self.focus = Focus::Actions;
-    }
-
-    pub fn previous_action(&mut self) {
-        let len = self.actions().len();
-        if len == 0 {
-            self.focus = Focus::Actions;
-            return;
-        }
-
-        self.selected_action = if self.selected_action == 0 {
-            len - 1
-        } else {
-            self.selected_action - 1
-        };
-        self.focus = Focus::Actions;
-    }
-
-    pub fn toggle_inspector(&mut self) {
-        self.show_inspector = !self.show_inspector;
-    }
-
     pub fn handle_key(&mut self, key: KeyCode) -> AppCommand {
+        if self.overlay.is_some() {
+            return self.overlay_key(key);
+        }
+        if !self.setup_required {
+            match key {
+                KeyCode::F(n @ 1..=4) => {
+                    return self.navigate(super::Destination::Section(usize::from(n - 1)))
+                }
+                KeyCode::F(5) if matches!(self.canvas_mode, CanvasMode::Browse) => {
+                    return AppCommand::Refresh
+                }
+                KeyCode::F(6) => return self.open_picker(super::Scope::Organisation),
+                KeyCode::F(7) => return self.open_picker(super::Scope::Project),
+                _ => {}
+            }
+        }
         if self.is_form_editing() {
             match key {
-                KeyCode::Esc => {
-                    self.handle_escape();
-                    AppCommand::Noop
-                }
+                KeyCode::Esc => self.navigate(super::Destination::Back),
                 KeyCode::Enter => self.handle_enter(),
                 KeyCode::Backspace => {
                     self.form_backspace();
                     AppCommand::Noop
                 }
                 KeyCode::Char(' ') => {
-                    self.form_toggle_or_cycle(true);
+                    self.form_insert_char(' ');
                     AppCommand::Noop
                 }
                 KeyCode::Char(ch) => {
@@ -247,71 +175,85 @@ impl App {
                 }
                 _ => AppCommand::Noop,
             }
+        } else if matches!(self.canvas_mode, CanvasMode::Browse) {
+            self.directory_key(key)
         } else {
             match key {
-                KeyCode::Char('q') => AppCommand::Quit,
-                KeyCode::Char('j') | KeyCode::Down => {
-                    self.move_forward();
-                    AppCommand::Noop
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    self.move_backward();
-                    AppCommand::Noop
-                }
-                KeyCode::Char('h') | KeyCode::Left => {
-                    self.move_left();
-                    AppCommand::Noop
-                }
-                KeyCode::Char('l') | KeyCode::Right => {
-                    self.move_right();
-                    AppCommand::Noop
-                }
-                KeyCode::Char('i') => {
-                    self.toggle_inspector();
-                    AppCommand::Noop
-                }
-                KeyCode::Char('n') => {
-                    self.set_focus(Focus::Actions);
-                    AppCommand::Noop
-                }
-                KeyCode::Char('g') => {
-                    self.set_focus(Focus::Resources);
-                    AppCommand::Noop
-                }
                 KeyCode::Enter => self.handle_enter(),
                 KeyCode::Esc => {
                     self.handle_escape();
                     AppCommand::Noop
                 }
-                KeyCode::Tab => {
-                    self.advance_focus();
+                KeyCode::Down => {
+                    self.scroll = self.scroll.saturating_add(1);
                     AppCommand::Noop
                 }
-                KeyCode::BackTab => {
-                    self.reverse_focus();
+                KeyCode::Up => {
+                    self.scroll = self.scroll.saturating_sub(1);
                     AppCommand::Noop
                 }
+                KeyCode::Char('q') => self.navigate(super::Destination::Quit),
                 _ => AppCommand::Noop,
             }
         }
     }
 
-    pub fn advance_focus(&mut self) {
-        self.cycle_focus(true);
+    pub fn finish_submission(&mut self, next: CanvasMode) {
+        match next {
+            CanvasMode::Error(error) => {
+                self.overlay = Some(super::Overlay::SubmissionError(error, 0))
+            }
+            CanvasMode::Confirm(confirm) => {
+                if let CanvasMode::EditForm(form) = &self.canvas_mode {
+                    self.review_draft = Some(form.clone());
+                }
+                self.canvas_mode = CanvasMode::Confirm(confirm);
+                self.scroll = 0;
+            }
+            mode => self.set_canvas_mode(mode),
+        }
     }
 
-    pub fn reverse_focus(&mut self) {
-        self.cycle_focus(false);
+    pub fn finish_confirmation(&mut self, next: CanvasMode) {
+        if matches!(next, CanvasMode::Error(_)) && self.restore_review_draft() {
+            self.finish_submission(next);
+        } else {
+            self.set_canvas_mode(next);
+        }
+    }
+
+    fn restore_review_draft(&mut self) -> bool {
+        let Some(form) = self.review_draft.take() else {
+            return false;
+        };
+        self.canvas_mode = CanvasMode::EditForm(form);
+        self.scroll = 0;
+        true
     }
 
     pub fn set_canvas_mode(&mut self, canvas_mode: CanvasMode) {
+        self.scroll = 0;
+        self.review_draft = None;
+        self.initial_values = Self::field_values(&canvas_mode);
         self.canvas_mode = canvas_mode;
-        self.focus = self.focus_order()[0];
+        self.focus = if matches!(self.canvas_mode, CanvasMode::Browse) {
+            Focus::Resources
+        } else {
+            Focus::Form
+        };
     }
 
     pub fn reset_to_browse(&mut self) {
+        self.review_draft = None;
         self.canvas_mode = if self.setup_required {
             CanvasMode::Setup(default_setup_form(&TuiBootstrap {
+                organization: self.organization.clone(),
+                organizations: self.organizations.clone(),
+                projects: self.projects.clone(),
+                org_error: self.org_error.clone(),
+                project_error: self.project_error.clone(),
+                app_error: self.app_error.clone(),
+                user_error: self.user_error.clone(),
                 host: self.host.clone(),
                 project: self.project.clone(),
                 auth_label: self.auth_label.clone(),
@@ -320,21 +262,32 @@ impl App {
                 app_records: self.app_records.clone(),
                 user_records: self.user_records.clone(),
                 idp_records: self.idp_records.clone(),
+                idp_error: self.idp_error.clone(),
             }))
         } else {
             CanvasMode::Browse
         };
-        self.focus = Focus::Resources;
+        self.focus = if self.setup_required {
+            Focus::Form
+        } else {
+            Focus::Records
+        };
     }
 
     pub fn form_next_field(&mut self) {
         if let Some(form) = self.form_state_mut() {
+            if form.fields.is_empty() {
+                return;
+            }
             form.selected_field = (form.selected_field + 1) % form.fields.len();
         }
     }
 
     pub fn form_previous_field(&mut self) {
         if let Some(form) = self.form_state_mut() {
+            if form.fields.is_empty() {
+                return;
+            }
             form.selected_field = if form.selected_field == 0 {
                 form.fields.len() - 1
             } else {
@@ -350,7 +303,7 @@ impl App {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
                     let cursor = field.cursor.min(field.value.len());
                     field.value.insert(cursor, ch);
-                    field.cursor = cursor + 1;
+                    field.cursor = cursor + ch.len_utf8();
                 }
                 super::types::FieldKind::Toggle | super::types::FieldKind::Checkbox => {
                     if ch == ' ' {
@@ -372,8 +325,12 @@ impl App {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
                     let cursor = field.cursor.min(field.value.len());
                     if cursor > 0 {
-                        field.value.remove(cursor - 1);
-                        field.cursor = cursor - 1;
+                        let prev = field.value[..cursor]
+                            .char_indices()
+                            .next_back()
+                            .map_or(0, |(i, _)| i);
+                        field.value.remove(prev);
+                        field.cursor = prev;
                     }
                 }
                 super::types::FieldKind::Toggle
@@ -387,7 +344,10 @@ impl App {
         if let Some(field) = self.active_form_field_mut() {
             match field.kind {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
-                    field.cursor = field.cursor.saturating_sub(1);
+                    field.cursor = field.value[..field.cursor.min(field.value.len())]
+                        .char_indices()
+                        .next_back()
+                        .map_or(0, |(i, _)| i);
                 }
                 _ => {}
             }
@@ -399,7 +359,10 @@ impl App {
             match field.kind {
                 super::types::FieldKind::Text | super::types::FieldKind::Secret => {
                     let len = field.value.len();
-                    field.cursor = (field.cursor + 1).min(len);
+                    field.cursor += field.value[field.cursor.min(len)..]
+                        .chars()
+                        .next()
+                        .map_or(0, char::len_utf8);
                 }
                 _ => {}
             }
@@ -434,53 +397,9 @@ impl App {
             .and_then(|form| form.fields.get_mut(form.selected_field))
     }
 
-    fn move_forward(&mut self) {
-        match self.focus {
-            Focus::Resources => self.next_resource(),
-            Focus::Actions => self.next_action(),
-            Focus::Form => self.form_next_field(),
-            Focus::Records => self.next_record(),
-        }
-    }
-
-    fn move_backward(&mut self) {
-        match self.focus {
-            Focus::Resources => self.previous_resource(),
-            Focus::Actions => self.previous_action(),
-            Focus::Form => self.form_previous_field(),
-            Focus::Records => self.previous_record(),
-        }
-    }
-
-    fn move_left(&mut self) {
-        if self.is_form_editing() {
-            self.form_toggle_or_cycle(false);
-            return;
-        }
-
-        if self.focus != Focus::Form {
-            self.previous_resource();
-        }
-    }
-
-    fn move_right(&mut self) {
-        if self.is_form_editing() {
-            self.form_toggle_or_cycle(true);
-            return;
-        }
-
-        if self.focus != Focus::Form {
-            self.next_resource();
-        }
-    }
-
     fn handle_enter(&mut self) -> AppCommand {
         match &self.canvas_mode {
-            CanvasMode::Browse => AppCommand::BeginAction {
-                resource: self.active_resource(),
-                action_index: self.selected_action,
-                selected_record: self.selected_record().cloned(),
-            },
+            CanvasMode::Browse => AppCommand::Noop,
             CanvasMode::EditForm(form) | CanvasMode::Setup(form) => {
                 AppCommand::SubmitForm(form.clone())
             }
@@ -493,6 +412,9 @@ impl App {
     }
 
     fn handle_escape(&mut self) {
+        if self.restore_review_draft() {
+            return;
+        }
         if !matches!(self.canvas_mode, CanvasMode::Browse) {
             self.reset_to_browse();
         }
@@ -504,42 +426,6 @@ impl App {
                 self.canvas_mode,
                 CanvasMode::EditForm(_) | CanvasMode::Setup(_)
             )
-    }
-
-    fn cycle_focus(&mut self, forward: bool) {
-        let ring = self.focus_order();
-        let current_index = ring
-            .iter()
-            .position(|focus| *focus == self.focus)
-            .unwrap_or(0);
-        let next_index = if forward {
-            (current_index + 1) % ring.len()
-        } else if current_index == 0 {
-            ring.len() - 1
-        } else {
-            current_index - 1
-        };
-        self.focus = ring[next_index];
-    }
-
-    fn set_focus(&mut self, focus: Focus) {
-        if self.focus_order().contains(&focus) {
-            self.focus = focus;
-        }
-    }
-
-    fn focus_order(&self) -> Vec<Focus> {
-        let mut order = if matches!(self.canvas_mode, CanvasMode::Browse) {
-            vec![Focus::Resources, Focus::Actions]
-        } else {
-            vec![Focus::Form, Focus::Resources, Focus::Actions]
-        };
-
-        if !self.active_records().is_empty() {
-            order.push(Focus::Records);
-        }
-
-        order
     }
 }
 

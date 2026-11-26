@@ -6,13 +6,50 @@
   "minimumReleaseAge": "3 days",
   "packageRules": [
     {
-      "description": "Automerge low-risk Cargo crate patch updates after CI passes",
+      "description": "Release changes to runtime and build-time Rust crates, including lockfile updates",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDepTypes": [
+        "dependencies",
+        "build-dependencies"
+      ],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "Release changes to container images and Rust toolchain pins",
+      "matchManagers": [
+        "dockerfile",
+        "rust-toolchain"
+      ],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "Release changes to tools that build the published binary and container",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchFileNames": [
+        ".github/workflows/release-please.yml"
+      ],
+      "matchPackageNames": [
+        "dtolnay/rust-toolchain",
+        "docker/setup-qemu-action",
+        "docker/setup-buildx-action",
+        "docker/build-push-action"
+      ],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "Automerge stable Cargo crate minor and patch updates after CI passes",
       "matchManagers": [
         "cargo"
       ],
       "matchUpdateTypes": [
+        "minor",
         "patch"
       ],
+      "matchCurrentVersion": "!/^0/",
       "automerge": true,
       "automergeType": "pr",
       "platformAutomerge": false
@@ -33,11 +70,12 @@
       "platformAutomerge": false
     },
     {
-      "description": "Automerge Docker patch, pin, and digest updates after CI passes",
+      "description": "Automerge Docker minor, patch, pin, and digest updates after CI passes",
       "matchManagers": [
         "dockerfile"
       ],
       "matchUpdateTypes": [
+        "minor",
         "patch",
         "pin",
         "digest"

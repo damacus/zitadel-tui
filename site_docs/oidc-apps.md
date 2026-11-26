@@ -3,8 +3,6 @@
 This guide is for Zitadel administrators who need to add, remove, or maintain
 OIDC applications in `zitadel-tui`.
 
-![Setup screen showing the TUI initial configuration form with OAuth device still marked as a placeholder and the templates path configured.](images/oidc-apps-setup.png)
-
 ## Before you start
 
 You need:
@@ -19,15 +17,13 @@ Why this can feel harder than it should:
   JSON key, even though PATs are still checked first by the resolver
 - OIDC Device Flow is limited to `auth login`, `auth logout`, and `auth status`;
   it does not run app administration commands
-- application settings are not editable in place today; if redirect URIs or the
-  client type change, the current workflow is to recreate the app
+- you can change redirect URIs in place and review the callback URLs before saving
 
 ## Use the TUI
 
-Once authenticated, open the application workspace. The action rail is where
-you create apps, rotate secrets, delete apps, or run quick setup from templates.
-
-![Application workspace showing mocked Grafana, Nextcloud, and Paperless-style apps in the selection tray.](images/oidc-apps-workspace.png)
+Open **Applications** in the directory. Press **/** to filter by name.
+Open an application to inspect its redirect URIs and choose an action for it.
+Creation and template setup appear after the application list.
 
 For a manual app:
 
@@ -38,14 +34,12 @@ For a manual app:
    clients.
 5. Submit the form.
 
-![Create application form filled with a Grafana example and redirect URIs.](images/oidc-apps-create.png)
-
 For ongoing maintenance:
 
 - use `Regenerate secret` for confidential clients
 - use `Delete selected` when an app should be removed entirely
-- recreate the app if you need to change redirect URIs or switch between public
-  and confidential
+- select an OIDC app and use `Edit redirect URIs` to add or remove callback URLs
+- use `Create native application` for a native client, optionally enabling device code
 - use `Quick setup` when the app already exists in `apps.yml`
 
 ## Use the CLI
