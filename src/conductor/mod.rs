@@ -1,10 +1,13 @@
 mod forms;
 mod mutations;
+mod providers;
 mod records;
 mod runtime;
+mod scope;
 mod support;
 #[cfg(test)]
 mod tests;
+mod user_actions;
 
 use crate::{
     api::client::ZitadelClient,
@@ -25,5 +28,12 @@ pub struct TuiConductor {
     app_records: Vec<Record>,
     user_records: Vec<Record>,
     idp_records: Vec<Record>,
+    organization: Option<String>,
+    organizations: Vec<(String, String)>,
+    projects: Vec<(String, String)>,
+    org_error: Option<String>,
+    project_error: Option<String>,
+    app_error: Option<String>,
+    user_error: Option<String>,
     idp_error: Option<String>,
 }

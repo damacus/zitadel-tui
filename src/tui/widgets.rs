@@ -7,9 +7,11 @@ pub(crate) fn render_form_line(field: &FormField, selected: bool) -> String {
     let marker = if selected { "›" } else { " " };
     let value = match field.kind {
         FieldKind::Secret => {
-            let masked = "•".repeat(field.value.len().max(1));
+            let masked = "•".repeat(field.value.chars().count().max(1));
             if selected {
-                let cursor = field.cursor.min(field.value.len());
+                let cursor = field.value[..field.cursor.min(field.value.len())]
+                    .chars()
+                    .count();
                 insert_cursor(&masked, cursor)
             } else {
                 masked
@@ -24,7 +26,9 @@ pub(crate) fn render_form_line(field: &FormField, selected: bool) -> String {
         }
         FieldKind::Choice(_) | FieldKind::Text => {
             if selected && !field.value.is_empty() {
-                let cursor = field.cursor.min(field.value.len());
+                let cursor = field.value[..field.cursor.min(field.value.len())]
+                    .chars()
+                    .count();
                 insert_cursor(&field.value, cursor)
             } else {
                 field.value.clone()

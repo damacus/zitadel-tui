@@ -10,6 +10,14 @@ use super::{
 
 fn test_app() -> App {
     App::from_bootstrap(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "PAT".to_string(),
@@ -39,6 +47,14 @@ fn enter_opens_section_then_runs_selected_action() {
 #[test]
 fn empty_bootstrap_keeps_empty_records() {
     let app = App::from_bootstrap(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "PAT".to_string(),
@@ -59,6 +75,14 @@ fn empty_bootstrap_keeps_empty_records() {
 #[test]
 fn setup_mode_uses_setup_form() {
     let app = App::from_bootstrap(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "Setup required".to_string(),
@@ -77,6 +101,14 @@ fn setup_mode_uses_setup_form() {
 fn form_editing_changes_selected_field() {
     let mut app = test_app();
     let mut form = default_setup_form(&TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "PAT".to_string(),
@@ -100,6 +132,14 @@ fn form_editing_changes_selected_field() {
 fn form_toggle_and_choice_cycle() {
     let mut app = test_app();
     let mut form = default_setup_form(&TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "PAT".to_string(),
@@ -123,7 +163,7 @@ fn form_toggle_and_choice_cycle() {
     let CanvasMode::Setup(form) = &app.canvas_mode else {
         panic!("expected setup mode");
     };
-    assert_eq!(form.fields[2].value, "OAuth device (placeholder)");
+    assert_eq!(form.fields[2].value, "PAT");
 
     app.form_toggle_or_cycle(false);
     let CanvasMode::Setup(form) = &app.canvas_mode else {
@@ -135,6 +175,14 @@ fn form_toggle_and_choice_cycle() {
 #[test]
 fn reset_to_browse_returns_to_setup_when_required() {
     let mut app = App::from_bootstrap(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "core".to_string(),
         auth_label: "Setup required".to_string(),
@@ -164,6 +212,14 @@ fn sync_runtime_updates_counts_without_fallback_records() {
     let mut app = test_app();
 
     app.sync_runtime(TuiBootstrap {
+        organization: Default::default(),
+        organizations: Default::default(),
+        projects: Default::default(),
+        org_error: Default::default(),
+        project_error: Default::default(),
+        app_error: Default::default(),
+        user_error: Default::default(),
+
         host: "https://zitadel.example.com".to_string(),
         project: "ops".to_string(),
         auth_label: "Service account".to_string(),
@@ -1027,7 +1083,7 @@ fn filtered_directory_renders_callback_and_opens_its_owner_at_both_sizes() {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(screen.contains("https://grafana.example/cb"));
-        assert!(screen.contains("Add redirect URIs"));
+        assert!(screen.contains("Edit redirect URIs"));
         assert!(!screen.contains("Other"));
     }
     assert!(
@@ -1062,6 +1118,84 @@ fn settings_opens_connection_and_configuration() {
 }
 
 #[test]
+fn horizontal_keys_move_between_tabs_and_enter_the_selected_directory() {
+    use crossterm::event::KeyCode::*;
+    let mut app = test_app();
+    for (key, index) in [(Left, 3), (Right, 0), (Char('l'), 1), (Char('h'), 0)] {
+        app.handle_key(key);
+        assert_eq!(app.selected_resource, index);
+        assert_eq!(app.focus, Focus::Resources);
+    }
+    app.handle_key(Right);
+    app.handle_key(Enter);
+    assert_eq!(app.focus, Focus::Records);
+    assert!(matches!(
+        app.handle_key(Enter),
+        AppCommand::BeginAction {
+            resource: ResourceKind::Users,
+            action_index: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn draft_survives_failed_submission_and_navigation_until_discarded() {
+    use super::{Destination, Overlay, Scope};
+    use crossterm::event::KeyCode::*;
+    let mut app = test_app();
+    app.projects = vec![("two".into(), "Second project".into())];
+    app.set_canvas_mode(CanvasMode::EditForm(FormState {
+        title: "Rename".into(),
+        description: String::new(),
+        submit_label: "Save".into(),
+        selected_field: 0,
+        pending: PendingAction::SaveConfig,
+        fields: vec![FormField {
+            key: "name",
+            label: "Name".into(),
+            kind: FieldKind::Text,
+            value: "A".into(),
+            cursor: 1,
+            help: String::new(),
+        }],
+    }));
+    app.handle_key(Char('é'));
+    assert!(canvas_title(&app).contains("Unsaved changes"));
+    let draft = app.canvas_mode.clone();
+    app.finish_submission(CanvasMode::Error(MessageState {
+        title: "Save failed".into(),
+        lines: vec!["Permission denied".into()],
+    }));
+    app.handle_key(Enter);
+    assert_eq!(app.canvas_mode, draft);
+    app.handle_key(F(2));
+    assert!(matches!(
+        app.overlay,
+        Some(Overlay::Discard(Destination::Section(1)))
+    ));
+    app.handle_key(Enter);
+    assert_eq!(app.selected_resource, 0);
+    assert_eq!(app.canvas_mode, draft);
+    app.handle_key(F(7));
+    app.handle_key(Char('S'));
+    app.handle_key(Enter);
+    assert!(matches!(
+        app.overlay,
+        Some(Overlay::Discard(Destination::Switch(Scope::Project, _)))
+    ));
+    app.handle_key(Esc);
+    assert_eq!(app.canvas_mode, draft);
+    app.handle_key(Backspace);
+    assert!(!app.dirty());
+    app.handle_key(Char('b'));
+    app.handle_key(F(2));
+    app.handle_key(Char('D'));
+    assert_eq!(app.selected_resource, 1);
+    assert_eq!(app.canvas_mode, CanvasMode::Browse);
+}
+
+#[test]
 fn wide_directory_joins_borders_and_exposes_provider_click_targets() {
     use ratatui::{backend::TestBackend, Terminal};
     let mut app = test_app();
@@ -1071,15 +1205,84 @@ fn wide_directory_joins_borders_and_exposes_provider_click_targets() {
     let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
     terminal.draw(|f| super::draw(f, &app, &mut hits)).unwrap();
     let buf = terminal.backend().buffer();
-    assert_eq!(buf[(22, 2)].symbol(), "┬");
-    assert_eq!(buf[(22, 21)].symbol(), "┴");
-    for y in 3..21 {
-        assert_eq!(buf[(22, y)].symbol(), "│");
-    }
     assert!(hits
         .iter()
-        .any(|(r, t)| matches!(t, super::Target::Section(2)) && r.contains((3, 5).into())));
+        .any(|(_, t)| matches!(t, super::Target::Section(2))));
+    assert!(hits
+        .iter()
+        .any(|(_, t)| matches!(t, super::Target::Scope(super::Scope::Organisation))));
+    for x in 1..99 {
+        assert_eq!(buf[(x, 4)].symbol(), "─");
+        assert_eq!(buf[(x, 21)].symbol(), "─");
+    }
+    assert_eq!(buf[(32, 6)].symbol(), "│");
     let screen = buf.content.iter().map(|c| c.symbol()).collect::<String>();
-    assert!(screen.contains("Could not load identity providers: forbidden"));
+    let directory = buf
+        .content
+        .chunks(usize::from(buf.area.width))
+        .map(|row| {
+            row.iter()
+                .take(32)
+                .skip(2)
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let words = directory.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        words.contains("Could not load identity providers: forbidden"),
+        "{words}"
+    );
     assert!(!screen.contains("No records"));
+}
+
+#[test]
+fn confirmation_retains_the_originating_draft() {
+    use super::{ConfirmState, MessageState, PendingAction};
+    use crossterm::event::KeyCode;
+    let mut app = test_app();
+    let mut form = super::default_setup_form(&TuiBootstrap {
+        host: "https://example.test".into(),
+        project: "".into(),
+        auth_label: "".into(),
+        templates_path: None,
+        setup_required: false,
+        app_records: vec![],
+        user_records: vec![],
+        idp_records: vec![],
+        idp_error: None,
+        organization: None,
+        organizations: vec![],
+        projects: vec![],
+        org_error: None,
+        project_error: None,
+        app_error: None,
+        user_error: None,
+    });
+    form.pending = PendingAction::SaveConfig;
+    app.set_canvas_mode(CanvasMode::EditForm(form));
+    app.handle_key(KeyCode::Char('x'));
+    let expected = app.canvas_mode.clone();
+    let review = CanvasMode::Confirm(ConfirmState {
+        title: "Review".into(),
+        lines: vec![],
+        submit_label: "Apply".into(),
+        pending: PendingAction::SaveConfig,
+    });
+    app.finish_submission(review.clone());
+    app.handle_key(KeyCode::F(2));
+    assert!(matches!(app.overlay, Some(super::Overlay::Discard(_))));
+    app.handle_key(KeyCode::Esc);
+    app.handle_key(KeyCode::Esc);
+    assert_eq!(app.canvas_mode, expected);
+    assert!(app.dirty());
+    app.finish_submission(review);
+    app.finish_confirmation(CanvasMode::Error(MessageState {
+        title: "Failed".into(),
+        lines: vec![],
+    }));
+    app.handle_key(KeyCode::Esc);
+    assert_eq!(app.canvas_mode, expected);
+    assert!(app.dirty());
 }

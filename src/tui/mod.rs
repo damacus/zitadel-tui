@@ -1,3 +1,5 @@
+mod navigation;
+pub use navigation::{Destination, Overlay, Scope};
 mod directory;
 mod render;
 mod state;

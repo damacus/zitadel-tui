@@ -1,5 +1,6 @@
 mod resolver;
 mod service_account;
+pub(crate) use service_account::exchange_service_account;
 mod session;
 
 use anyhow::{bail, Result};

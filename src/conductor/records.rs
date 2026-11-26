@@ -16,7 +16,14 @@ impl From<&App> for Record {
                 .map(|uris| uris.len())
                 .unwrap_or(0);
 
-            (format!("{redirect_count} redirects"), client_id)
+            (
+                if redirect_count == 1 {
+                    "1 redirect".to_owned()
+                } else {
+                    format!("{redirect_count} redirects")
+                },
+                client_id,
+            )
         } else if let Some(api_config) = &app.api_config {
             let client_id = api_config
                 .client_id
@@ -42,6 +49,7 @@ impl From<&App> for Record {
                 .as_ref()
                 .and_then(|cfg| cfg.redirect_uris.clone())
                 .unwrap_or_default(),
+            provider_owner: None,
             changed_at: app.state.clone().unwrap_or_else(|| "unknown".to_string()),
         }
     }
@@ -100,6 +108,7 @@ impl From<&User> for Record {
             summary,
             detail,
             redirect_uris: vec![],
+            provider_owner: None,
             changed_at: "loaded".to_string(),
         }
     }
@@ -115,9 +124,17 @@ impl From<&Idp> for Record {
                 .unwrap_or_else(|| "unnamed-idp".to_string()),
             kind: idp.state.clone().unwrap_or_else(|| "unknown".to_string()),
             summary: idp.r#type.clone().unwrap_or_else(|| "provider".to_string()),
-            detail: "manual credentials".to_string(),
+            detail: crate::api::providers::owner(&idp.raw)
+                .unwrap_or("Unknown scope")
+                .into(),
             redirect_uris: vec![],
-            changed_at: "configured".to_string(),
+            provider_owner: crate::api::providers::owner(&idp.raw),
+            changed_at: idp
+                .raw
+                .pointer("/details/changeDate")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .into(),
         }
     }
 }

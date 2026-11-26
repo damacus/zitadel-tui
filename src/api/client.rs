@@ -1,3 +1,4 @@
+mod directory;
 use anyhow::{bail, Context, Result};
 use reqwest::{Client, Method};
 use serde::de::DeserializeOwned;
@@ -13,6 +14,18 @@ pub struct ZitadelClient {
     http: Client,
     base_url: String,
     token: String,
+    pub(crate) organization: Option<String>,
+    pub(crate) granted_projects: Vec<GrantedProject>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrantedProject {
+    pub project_id: String,
+    pub project_name: String,
+    pub grant_id: String,
+    #[serde(default)]
+    pub granted_role_keys: Vec<String>,
 }
 
 impl ZitadelClient {
@@ -21,6 +34,8 @@ impl ZitadelClient {
             http: Client::builder().build()?,
             base_url: base_url.trim_end_matches('/').to_string(),
             token,
+            organization: None,
+            granted_projects: Vec::new(),
         })
     }
 
@@ -61,7 +76,11 @@ impl ZitadelClient {
         decode_list(response)
     }
 
-    async fn oidc_redirect_uris(&self, project_id: &str, app_id: &str) -> Result<Vec<String>> {
+    async fn oidc_redirect_config(
+        &self,
+        project_id: &str,
+        app_id: &str,
+    ) -> Result<(Vec<String>, String)> {
         let response = self
             .api_request(
                 Method::POST,
@@ -78,18 +97,93 @@ impl ZitadelClient {
         let oidc = app
             .get("oidcConfiguration")
             .context("application is not an OIDC application")?;
-        let uris = oidc
-            .get("redirectUris")
-            .context("application response has no redirect URI list")?
-            .as_array()
-            .context("invalid redirect URI list")?;
-        uris.iter()
-            .map(|uri| {
-                uri.as_str()
-                    .map(str::to_owned)
-                    .context("invalid redirect URI in application response")
-            })
-            .collect()
+        let configuration = oidc.as_object().context("invalid OIDC configuration")?;
+        let clock_skew = match configuration.get("clockSkew") {
+            None => "0s",
+            Some(skew) => skew.as_str().context("invalid OIDC clock skew")?,
+        };
+        // Protobuf JSON omits repeated fields when they are empty.
+        let uris = match configuration.get("redirectUris") {
+            None => Vec::new(),
+            Some(uris) => uris
+                .as_array()
+                .context("invalid redirect URI list")?
+                .iter()
+                .map(|uri| {
+                    uri.as_str()
+                        .map(str::to_owned)
+                        .context("invalid redirect URI in application response")
+                })
+                .collect::<Result<Vec<_>>>()?,
+        };
+        Ok((uris, clock_skew.to_owned()))
+    }
+
+    async fn update_redirect_uris(
+        &self,
+        project: &str,
+        app: &str,
+        uris: &[String],
+        clock_skew: &str,
+    ) -> Result<()> {
+        self.api_request(
+            Method::POST,
+            "/zitadel.application.v2.ApplicationService/UpdateApplication",
+            Some(json!({"projectId":project,"applicationId":app,
+                "oidcConfiguration":{"redirectUris":uris,"clockSkew":clock_skew}})),
+        )
+        .await
+        .context("update failed or its outcome is unknown; read the application before retrying")?;
+        Ok(())
+    }
+
+    pub(crate) async fn rename_application(
+        &self,
+        project: &str,
+        app_id: &str,
+        name: &str,
+    ) -> Result<()> {
+        if name.trim().is_empty() || name.chars().count() > 200 {
+            bail!("Enter an application name between 1 and 200 characters.");
+        }
+        self.api_request(
+            Method::POST,
+            "/zitadel.application.v2.ApplicationService/UpdateApplication",
+            Some(json!({"applicationId":app_id,"projectId":project,"name":name})),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn replace_redirect_uris(
+        &self,
+        project: &str,
+        app: &str,
+        original: &[String],
+        desired: &[String],
+    ) -> Result<()> {
+        let (current, clock_skew) = self.oidc_redirect_config(project, app).await?;
+        if current != original {
+            bail!("Redirect URIs have changed. Refresh and review the application again.");
+        }
+        if current == desired {
+            return Ok(());
+        }
+        if desired.is_empty() {
+            bail!("This Zitadel API cannot clear the final redirect URI.");
+        }
+        self.update_redirect_uris(project, app, desired, &clock_skew)
+            .await?;
+        let (actual, actual_skew) = self.oidc_redirect_config(project, app).await.context(
+            "update was sent but verification failed; read the application before retrying",
+        )?;
+        if actual.len() != desired.len()
+            || !desired.iter().all(|v| actual.contains(v))
+            || actual_skew != clock_skew
+        {
+            bail!("Update sent but redirect URIs or clock skew differ. Refresh before retrying.");
+        }
+        Ok(())
     }
 
     pub async fn add_redirect_uris(
@@ -105,7 +199,7 @@ impl ZitadelClient {
         {
             bail!("provide at least one non-empty redirect URI without surrounding whitespace");
         }
-        let mut uris = self.oidc_redirect_uris(project_id, app_id).await?;
+        let (mut uris, clock_skew) = self.oidc_redirect_config(project_id, app_id).await?;
         let mut added = Vec::new();
         for uri in additions {
             if !uris.contains(uri) {
@@ -116,12 +210,17 @@ impl ZitadelClient {
         if added.is_empty() {
             return Ok(json!({"changed": false, "redirectUris": uris}));
         }
-        self.api_request(Method::POST, "/zitadel.application.v2.ApplicationService/UpdateApplication",
-            Some(json!({"projectId": project_id, "applicationId": app_id, "oidcConfiguration": {"redirectUris": uris}})))
-            .await.context("update failed or its outcome is unknown; read the application before retrying")?;
-        let actual = self.oidc_redirect_uris(project_id, app_id).await.context(
-            "update was sent but verification failed; read the application before retrying",
-        )?;
+        self.update_redirect_uris(project_id, app_id, &uris, &clock_skew)
+            .await?;
+        let (actual, actual_skew) = self
+            .oidc_redirect_config(project_id, app_id)
+            .await
+            .context(
+                "update was sent but verification failed; read the application before retrying",
+            )?;
+        if actual_skew != clock_skew {
+            bail!("Update sent but OIDC clock skew differs. Refresh before retrying.");
+        }
         if uris.iter().any(|uri| !actual.contains(uri)) {
             bail!("update was sent but verification found missing redirect URIs; inspect the application before retrying");
         }
@@ -178,6 +277,17 @@ impl ZitadelClient {
         name: &str,
         device_code: bool,
     ) -> Result<CreateAppResult> {
+        self.create_native_app_with_redirects(project_id, name, device_code, &[])
+            .await
+    }
+
+    pub async fn create_native_app_with_redirects(
+        &self,
+        project_id: &str,
+        name: &str,
+        device_code: bool,
+        redirect_uris: &[String],
+    ) -> Result<CreateAppResult> {
         let mut grant_types = vec![
             "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
             "OIDC_GRANT_TYPE_REFRESH_TOKEN",
@@ -196,7 +306,7 @@ impl ZitadelClient {
                 &format!("/management/v1/projects/{project_id}/apps/oidc"),
                 Some(json!({
                     "name": name,
-                    "redirectUris": [],
+                    "redirectUris": redirect_uris,
                     "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
                     "grantTypes": grant_types,
                     "appType": "OIDC_APP_TYPE_NATIVE",
@@ -259,22 +369,22 @@ impl ZitadelClient {
         last_name: &str,
         username: Option<&str>,
     ) -> Result<CreateUserResult> {
+        let mut body = json!({
+            "username": username.unwrap_or_else(|| email.split('@').next().unwrap_or(email)),
+            "profile": {
+                "givenName": first_name,
+                "familyName": last_name
+            },
+            "email": {
+                "email": email,
+                "isVerified": true
+            }
+        });
+        if let Some(id) = &self.organization {
+            body["organization"] = json!({"orgId": id});
+        }
         let response = self
-            .api_request(
-                Method::POST,
-                "/v2/users/human",
-                Some(json!({
-                    "username": username.unwrap_or_else(|| email.split('@').next().unwrap_or(email)),
-                    "profile": {
-                        "givenName": first_name,
-                        "familyName": last_name
-                    },
-                    "email": {
-                        "email": email,
-                        "isVerified": true
-                    }
-                })),
-            )
+            .api_request(Method::POST, "/v2/users/human", Some(body))
             .await?;
         decode(response)
     }
@@ -343,7 +453,11 @@ impl ZitadelClient {
         let response = self
             .api_request(
                 Method::POST,
-                "/admin/v1/idps/google",
+                if self.organization.is_some() {
+                    "/management/v1/idps/google"
+                } else {
+                    "/admin/v1/idps/google"
+                },
                 Some(json!({
                     "name": name,
                     "clientId": client_id,
@@ -361,7 +475,12 @@ impl ZitadelClient {
         decode(response)
     }
 
-    async fn api_request(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
+    pub(crate) async fn api_request(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<Value> {
         let url = format!("{}{}", self.base_url, path);
         let mut request = self
             .http
@@ -369,6 +488,11 @@ impl ZitadelClient {
             .bearer_auth(&self.token)
             .header("Accept", "application/json");
 
+        if let Some(id) = &self.organization {
+            if path.starts_with("/management/") {
+                request = request.header("x-zitadel-orgid", id);
+            }
+        }
         if path.starts_with("/zitadel.application.v2.") {
             request = request.header("Connect-Protocol-Version", "1");
         }
@@ -440,6 +564,71 @@ mod tests {
     use mockito::{Matcher, Server};
 
     #[tokio::test]
+    async fn replace_redirect_uris_preserves_clock_skew() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let desired = vec!["native://new".to_owned()];
+        let mut server = Server::new_async().await;
+        let after = desired.clone();
+        let fetched = AtomicBool::new(false);
+        let read = server
+            .mock(
+                "POST",
+                "/zitadel.application.v2.ApplicationService/GetApplication",
+            )
+            .with_chunked_body(move |writer| {
+                let config = if !fetched.swap(true, Ordering::SeqCst) {
+                    json!({"redirectUris":["native://old"],"clockSkew":"1s"})
+                } else {
+                    json!({"redirectUris":after,"clockSkew":"1s"})
+                };
+                write!(
+                    writer,
+                    "{}",
+                    json!({"application":{"projectId":"p","oidcConfiguration":config}})
+                )
+            })
+            .expect(2)
+            .create_async()
+            .await;
+        let update = server.mock("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication")
+            .match_header("connect-protocol-version","1")
+            .match_body(Matcher::Json(json!({"projectId":"p","applicationId":"a","oidcConfiguration":{"redirectUris":desired,"clockSkew":"1s"}})))
+            .create_async().await;
+        let client = ZitadelClient::new(server.url(), "token".into()).unwrap();
+        client
+            .replace_redirect_uris("p", "a", &["native://old".into()], &desired)
+            .await
+            .unwrap();
+        read.assert_async().await;
+        update.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn stale_redirect_review_does_not_change_remote_configuration() {
+        let mut server = Server::new_async().await;
+        let read = server.mock("POST", "/zitadel.application.v2.ApplicationService/GetApplication")
+            .with_body(r#"{"application":{"projectId":"p","oidcConfiguration":{"redirectUris":["native://other"]}}}"#)
+            .create_async().await;
+        let update = server
+            .mock(
+                "POST",
+                "/zitadel.application.v2.ApplicationService/UpdateApplication",
+            )
+            .expect(0)
+            .create_async()
+            .await;
+        let client = ZitadelClient::new(server.url(), "token".into()).unwrap();
+        assert!(client
+            .replace_redirect_uris("p", "a", &["native://old".into()], &[])
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("changed"));
+        read.assert_async().await;
+        update.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn add_redirect_uris_preserves_existing_and_verifies_update() {
         use std::sync::{
             atomic::{AtomicUsize, Ordering},
@@ -459,7 +648,7 @@ mod tests {
             }).expect(2).create_async().await;
         let update = server.mock("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication")
             .match_header("authorization", "Bearer test-token")
-            .match_body(Matcher::Json(json!({"applicationId": "app-1", "projectId": "project-1", "oidcConfiguration": {"redirectUris": ["https://old.example/cb", "https://new.example/cb"]}})))
+            .match_body(Matcher::Json(json!({"applicationId": "app-1", "projectId": "project-1", "oidcConfiguration": {"redirectUris": ["https://old.example/cb", "https://new.example/cb"], "clockSkew":"0s"}})))
             .with_status(200).with_body("{}").create_async().await;
         let client = ZitadelClient::new(server.url(), "test-token".to_string()).unwrap();
         let result = client
